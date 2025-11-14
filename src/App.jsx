@@ -1,0 +1,1 @@
+import React from 'react'\nimport Home from './pages/Home'\nexport default function App(){ return (<div className='min-h-screen'><Home/></div>) }

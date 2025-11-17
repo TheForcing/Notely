@@ -1,1 +1,6 @@
-import React from 'react'\nimport Home from './pages/Home'\nexport default function App(){ return (<div className='min-h-screen'><Home/></div>) }
+import React from 'react'
+import Home from './pages/Home'
+
+export default function App(){
+  return (<div className='min-h-screen'><Home/></div>)
+}

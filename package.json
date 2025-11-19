@@ -12,12 +12,14 @@
     "react-dom": "^18.2.0",
     "marked": "^5.1.1",
     "nanoid": "^4.0.0",
-    "firebase": "^10.0.0"
+    "firebase": "^10.0.0",
+    "highlight.js": "^11.8.0"
   },
   "devDependencies": {
     "vite": "^5.0.0",
     "tailwindcss": "^4.2.0",
     "autoprefixer": "^10.4.14",
-    "postcss": "^8.4.27"
+    "postcss": "^8.4.27",
+    "@vitejs/plugin-react": "^4.0.0"
   }
 }

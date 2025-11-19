@@ -1,5 +1,3 @@
-// src/firebase.js
-// 복사한 Firebase 웹앱 설정 정보를 아래에 붙여넣으세요.
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";

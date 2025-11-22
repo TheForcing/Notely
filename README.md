@@ -1,5 +1,3 @@
-# Notely (Firebase-enabled)
-
-1. 복사한 Firebase 웹 앱 설정 정보를 `src/firebase.js`에 붙여넣으세요.
-2. 설치: `npm install`
-3. 개발 서버: `npm run dev`
+Notely - Offline + Settings + Attachments demo
+- Features: offline write-queue (local-first), settings saved locally & optionally to Firestore, attachment upload to Firebase Storage (requires auth)
+- Setup: fill VITE_FIREBASE_* env vars or src/firebase.js, then npm install && npm run dev

@@ -1,3 +1,4 @@
-Notely - Offline + Settings + Attachments demo
-- Features: offline write-queue (local-first), settings saved locally & optionally to Firestore, attachment upload to Firebase Storage (requires auth)
-- Setup: fill VITE_FIREBASE_* env vars or src/firebase.js, then npm install && npm run dev
+Notely (progress demo)
+- Contains improved src/firebase.js with upload progress support.
+- EditorWithProgress shows upload progress bar and inserts image markdown after upload.
+- Setup: create .env.local with VITE_FIREBASE_* values, npm install, npm run dev

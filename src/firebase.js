@@ -1,13 +1,14 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+// src/firebase.js
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 import {
   getStorage,
   ref as storageRef,
   uploadBytesResumable,
   getDownloadURL,
   deleteObject,
-} from 'firebase/storage';
+} from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -23,15 +24,21 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-export function uploadUserFile(uid, noteId, file, onProgress) {
-  if (!uid) return Promise.reject(new Error("no uid"));
+/**
+ * Start upload and return { task, finished }.
+ * finished resolves to metadata { path, url, name, size, contentType }.
+ * Call task.cancel() to cancel.
+ */
+export function startUploadUserFile(uid, noteId, file, onProgress) {
+  if (!uid)
+    return { task: null, finished: Promise.reject(new Error("no uid")) };
   const path = `users/${uid}/attachments/${noteId}/${Date.now()}_${file.name}`;
   const r = storageRef(storage, path);
   const task = uploadBytesResumable(r, file);
 
-  return new Promise((resolve, reject) => {
+  const finished = new Promise((resolve, reject) => {
     task.on(
-      'state_changed',
+      "state_changed",
       (snapshot) => {
         if (onProgress && snapshot.totalBytes) {
           const pct = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
@@ -39,7 +46,7 @@ export function uploadUserFile(uid, noteId, file, onProgress) {
         }
       },
       (error) => {
-        console.error('upload error', error);
+        console.error("upload error", error);
         reject(error);
       },
       async () => {
@@ -58,10 +65,12 @@ export function uploadUserFile(uid, noteId, file, onProgress) {
       }
     );
   });
+
+  return { task, finished };
 }
 
 export async function deleteUserFile(path) {
-  if (!path) throw new Error('no path');
+  if (!path) throw new Error("no path");
   const r = storageRef(storage, path);
   await deleteObject(r);
 }

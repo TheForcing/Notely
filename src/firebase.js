@@ -27,7 +27,7 @@ export const storage = getStorage(app);
 /**
  * Start upload and return { task, finished }.
  * finished resolves to metadata { path, url, name, size, contentType }.
- * Call task.cancel() to cancel.
+ * Call task.cancel() to cancel if needed.
  */
 export function startUploadUserFile(uid, noteId, file, onProgress) {
   if (!uid)

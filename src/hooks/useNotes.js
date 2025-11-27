@@ -13,6 +13,13 @@ import {
 } from "firebase/firestore";
 import { auth } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { startUploadUserFile } from "../firebase";
+import {
+  addFileToQueue,
+  getPendingFiles,
+  removeFileFromQueue,
+  markFileStatus,
+} from "../utils/idbQueue";
 
 const STORAGE_KEY = "notely_notes_v2";
 function loadJSON(key, fallback) {
@@ -34,6 +41,7 @@ export default function useNotes() {
   const [activeNoteId, setActiveNoteId] = useState(notes[0]?.id || null);
   const userRef = useRef(null);
   const unsubSnapshotRef = useRef(null);
+  const processingRef = useRef(false);
 
   useEffect(() => saveJSON(STORAGE_KEY, notes), [notes]);
 
@@ -42,11 +50,20 @@ export default function useNotes() {
       userRef.current = u;
       if (u) {
         attachFirestoreListener(u.uid);
+        processFileQueue();
       } else {
         detachFirestoreListener();
       }
     });
     return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const onOnline = () => {
+      if (userRef.current) processFileQueue();
+    };
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
   }, []);
 
   const attachFirestoreListener = (uid) => {
@@ -136,7 +153,6 @@ export default function useNotes() {
     }
   }, []);
 
-  // add attachment metadata to a note (called after upload completes)
   const addAttachmentMeta = useCallback(
     async (noteId, meta) => {
       setNotes((prev) =>
@@ -165,6 +181,68 @@ export default function useNotes() {
     [notes]
   );
 
+  // store file in IndexedDB queue (for offline persistence)
+  const enqueueFile = useCallback(async (noteId, file) => {
+    const id =
+      Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+    await addFileToQueue({
+      id,
+      noteId,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      blob: file,
+    });
+    // show placeholder in local note attachments (pending)
+    setNotes((prev) =>
+      prev.map((n) =>
+        n.id === noteId
+          ? {
+              ...n,
+              attachments: [
+                ...(n.attachments || []),
+                { name: file.name, pending: true, id },
+              ],
+            }
+          : n
+      )
+    );
+    return id;
+  }, []);
+
+  // process pending files: upload when online and user is logged in
+  const processFileQueue = useCallback(async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+    try {
+      const user = userRef.current;
+      if (!user || !navigator.onLine) return;
+      const pending = await getPendingFiles(50);
+      for (const p of pending) {
+        try {
+          await markFileStatus(p.id, "processing");
+          const { finished } = startUploadUserFile(
+            user.uid,
+            p.noteId,
+            p.blob,
+            (pct) => {
+              console.log("upload progress", p.id, pct);
+            }
+          );
+          const meta = await finished;
+          await addAttachmentMeta(p.noteId, meta);
+          await removeFileFromQueue(p.id);
+        } catch (e) {
+          console.error("file queue upload failed", p.id, e);
+          await markFileStatus(p.id, "error");
+        }
+      }
+    } catch (e) {
+      console.error("processFileQueue", e);
+    }
+    processingRef.current = false;
+  }, [addAttachmentMeta]);
+
   return {
     notes,
     rawNotes: notes,
@@ -172,7 +250,9 @@ export default function useNotes() {
     updateNote,
     deleteNote,
     addAttachmentMeta,
+    enqueueFile,
     activeNoteId,
     setActiveNoteId,
+    processFileQueue,
   };
 }

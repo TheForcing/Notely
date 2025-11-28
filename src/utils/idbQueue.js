@@ -1,10 +1,4 @@
 // src/utils/idbQueue.js
-/**
- * Minimal IndexedDB helper for file queue.
- * DB: 'notely-db', store: 'fileQueue', keyPath: 'id'
- * Record: { id, noteId, name, type, size, blob, status, createdAt, attempts }
- */
-
 export function openDB() {
   return new Promise((resolve, reject) => {
     const rq = indexedDB.open("notely-db", 1);
@@ -61,6 +55,17 @@ export async function getPendingFiles(limit = 100) {
         resolve(out);
       }
     };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getAllFiles() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("fileQueue", "readonly");
+    const store = tx.objectStore("fileQueue");
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => reject(req.error);
   });
 }

@@ -19,6 +19,7 @@ import {
   getPendingFiles,
   removeFileFromQueue,
   markFileStatus,
+  getAllFiles,
 } from "../utils/idbQueue";
 
 const STORAGE_KEY = "notely_notes_v2";
@@ -39,9 +40,12 @@ function saveJSON(key, v) {
 export default function useNotes() {
   const [notes, setNotes] = useState(() => loadJSON(STORAGE_KEY, []));
   const [activeNoteId, setActiveNoteId] = useState(notes[0]?.id || null);
+  const [queueFiles, setQueueFiles] = useState([]); // from IndexedDB
+  const [queueProgress, setQueueProgress] = useState({}); // {id: pct}
   const userRef = useRef(null);
   const unsubSnapshotRef = useRef(null);
   const processingRef = useRef(false);
+  const MAX_ATTEMPTS = 5;
 
   useEffect(() => saveJSON(STORAGE_KEY, notes), [notes]);
 
@@ -50,6 +54,7 @@ export default function useNotes() {
       userRef.current = u;
       if (u) {
         attachFirestoreListener(u.uid);
+        refreshQueue();
         processFileQueue();
       } else {
         detachFirestoreListener();
@@ -61,9 +66,20 @@ export default function useNotes() {
   useEffect(() => {
     const onOnline = () => {
       if (userRef.current) processFileQueue();
+      refreshQueue();
     };
     window.addEventListener("online", onOnline);
     return () => window.removeEventListener("online", onOnline);
+  }, []);
+
+  // load all queue items into memory for UI
+  const refreshQueue = useCallback(async () => {
+    try {
+      const all = await getAllFiles();
+      setQueueFiles(all);
+    } catch (e) {
+      console.warn("refreshQueue failed", e);
+    }
   }, []);
 
   const attachFirestoreListener = (uid) => {
@@ -181,68 +197,125 @@ export default function useNotes() {
     [notes]
   );
 
-  // store file in IndexedDB queue (for offline persistence)
-  const enqueueFile = useCallback(async (noteId, file) => {
-    const id =
-      Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
-    await addFileToQueue({
-      id,
-      noteId,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      blob: file,
-    });
-    // show placeholder in local note attachments (pending)
-    setNotes((prev) =>
-      prev.map((n) =>
-        n.id === noteId
-          ? {
-              ...n,
-              attachments: [
-                ...(n.attachments || []),
-                { name: file.name, pending: true, id },
-              ],
-            }
-          : n
-      )
-    );
-    return id;
-  }, []);
+  // enqueue file into IndexedDB
+  const enqueueFile = useCallback(
+    async (noteId, file) => {
+      const id =
+        Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+      await addFileToQueue({
+        id,
+        noteId,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        blob: file,
+      });
+      // update local queue UI
+      await refreshQueue();
+      // optional placeholder in notes
+      setNotes((prev) =>
+        prev.map((n) =>
+          n.id === noteId
+            ? {
+                ...n,
+                attachments: [
+                  ...(n.attachments || []),
+                  { name: file.name, pending: true, id },
+                ],
+              }
+            : n
+        )
+      );
+      return id;
+    },
+    [refreshQueue]
+  );
 
-  // process pending files: upload when online and user is logged in
+  // process queue with exponential backoff on errors
   const processFileQueue = useCallback(async () => {
     if (processingRef.current) return;
     processingRef.current = true;
     try {
       const user = userRef.current;
       if (!user || !navigator.onLine) return;
-      const pending = await getPendingFiles(50);
+      // get pending and error items that still are below max attempts
+      const pending = await getPendingFiles(100);
       for (const p of pending) {
         try {
+          // skip if too many attempts
+          if ((p.attempts || 0) >= MAX_ATTEMPTS) {
+            await markFileStatus(p.id, "failed");
+            continue;
+          }
           await markFileStatus(p.id, "processing");
+          // reset progress
+          setQueueProgress((prev) => ({ ...prev, [p.id]: 0 }));
           const { finished } = startUploadUserFile(
             user.uid,
             p.noteId,
             p.blob,
             (pct) => {
-              console.log("upload progress", p.id, pct);
+              setQueueProgress((prev) => ({ ...prev, [p.id]: pct }));
             }
           );
           const meta = await finished;
           await addAttachmentMeta(p.noteId, meta);
           await removeFileFromQueue(p.id);
+          // refresh queue view & remove progress
+          setQueueProgress((prev) => {
+            const c = { ...prev };
+            delete c[p.id];
+            return c;
+          });
+          await refreshQueue();
         } catch (e) {
           console.error("file queue upload failed", p.id, e);
           await markFileStatus(p.id, "error");
+          // exponential backoff: wait based on attempts before next overall loop
+          const rec = await (async () => {
+            const dbRes = await getAllFiles();
+            return dbRes.find((r) => r.id === p.id);
+          })();
+          const attempts = rec && rec.attempts ? rec.attempts : p.attempts || 0;
+          const delay = Math.min(30000, Math.pow(2, attempts) * 1000); // cap 30s
+          await new Promise((res) => setTimeout(res, delay));
         }
       }
     } catch (e) {
       console.error("processFileQueue", e);
     }
     processingRef.current = false;
-  }, [addAttachmentMeta]);
+  }, [addAttachmentMeta, refreshQueue]);
 
+  // manual retry of a specific queued item
+  const retryQueuedFile = useCallback(
+    async (id) => {
+      try {
+        await markFileStatus(id, "pending");
+        await refreshQueue();
+        // try processing immediately
+        processFileQueue();
+      } catch (e) {
+        console.warn("retryQueuedFile", e);
+      }
+    },
+    [processFileQueue, refreshQueue]
+  );
+
+  // remove queued file (user wants to discard)
+  const removeQueuedFile = useCallback(
+    async (id) => {
+      try {
+        await removeFileFromQueue(id);
+        await refreshQueue();
+      } catch (e) {
+        console.warn("removeQueuedFile", e);
+      }
+    },
+    [refreshQueue]
+  );
+
+  // expose
   return {
     notes,
     rawNotes: notes,
@@ -254,5 +327,10 @@ export default function useNotes() {
     activeNoteId,
     setActiveNoteId,
     processFileQueue,
+    queueFiles,
+    queueProgress,
+    refreshQueue,
+    retryQueuedFile,
+    removeQueuedFile,
   };
 }

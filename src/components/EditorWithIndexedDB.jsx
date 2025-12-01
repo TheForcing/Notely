@@ -47,42 +47,8 @@ export default function Editor({ note, onChange, onDelete, onTogglePin }) {
     return () => clearTimeout(saveTimer.current);
   }, [draft, note, onChange]);
 
-  const onFile = async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (!note) return alert("노트를 먼저 선택하세요");
-    if (navigator.onLine && user) {
-      try {
-        const { task, finished } = startUploadUserFile(
-          user.uid,
-          note.id,
-          f,
-          (p) => console.log("progress", p)
-        );
-        const meta = await finished;
-        setDraft((s) => ({
-          ...s,
-          body: s.body + `\n![](${meta.url})\n`,
-          attachments: [...(s.attachments || []), meta],
-        }));
-        await addAttachmentMeta(note.id, meta);
-      } catch (e) {
-        alert("업로드 실패: " + (e.message || e));
-      }
-    } else {
-      try {
-        const id = await enqueueFile(note.id, f);
-        alert(
-          "오프라인이라 파일을 저장했습니다. 온라인 복귀 시 자동 업로드됩니다. (id: " +
-            id +
-            ")"
-        );
-      } catch (e) {
-        alert("파일 큐 저장 실패: " + e.message);
-      }
-    }
-    e.target.value = "";
-  };
+    };
+
 
   if (!note)
     return (

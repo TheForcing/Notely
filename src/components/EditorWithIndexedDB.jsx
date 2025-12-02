@@ -12,8 +12,12 @@ export default function Editor({ note, onChange, onDelete, onTogglePin }) {
   const [draft, setDraft] = useState(
     note || { title: "", body: "", tags: [], attachments: [] }
   );
-  const [status, setStatus] = useState("idle");
   const saveTimer = useRef(null);
+
+  // compression settings (local state in editor)
+  const [compressionEnabled, setCompressionEnabled] = useState(true);
+  const [quality, setQuality] = useState(0.8);
+  const [maxDim, setMaxDim] = useState(1600);
 
   useEffect(
     () => setDraft(note || { title: "", body: "", tags: [], attachments: [] }),
@@ -30,25 +34,79 @@ export default function Editor({ note, onChange, onDelete, onTogglePin }) {
         JSON.stringify(note.tags || []) !== JSON.stringify(draft.tags || [])
       ) {
         try {
-          setStatus("saving");
           await onChange(note.id, {
             title: draft.title,
             body: draft.body,
             tags: draft.tags,
           });
-          setStatus("saved");
-          setTimeout(() => setStatus("idle"), 1000);
         } catch (e) {
           console.error(e);
-          setStatus("nosave");
         }
-      } else setStatus("idle");
+      }
     }, 700);
     return () => clearTimeout(saveTimer.current);
   }, [draft, note, onChange]);
 
-    };
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!note) return alert("노트를 먼저 선택하세요");
 
+    // compress if enabled and image
+    let toUse = f;
+    if (compressionEnabled && f.type && f.type.startsWith("image/")) {
+      try {
+        const compressed = await compressImageFile(f, {
+          maxWidth: maxDim,
+          maxHeight: maxDim,
+          quality,
+        });
+        toUse = compressed;
+        console.log(
+          "이미지 압축: 원본",
+          f.size,
+          "바이트 → 압축",
+          toUse.size || toUse.length || 0,
+          "바이트"
+        );
+      } catch (err) {
+        console.warn("이미지 압축 실패, 원본 사용", err);
+      }
+    }
+
+    // ONLINE: upload immediately, OFFLINE: enqueue to IndexedDB
+    if (navigator.onLine && user) {
+      try {
+        const { finished } = startUploadUserFile(
+          user.uid,
+          note.id,
+          toUse,
+          (p) => console.log("progress", p)
+        );
+        const meta = await finished;
+        setDraft((s) => ({
+          ...s,
+          body: s.body + `\n![](${meta.url})\n`,
+          attachments: [...(s.attachments || []), meta],
+        }));
+        await addAttachmentMeta(note.id, meta);
+      } catch (e) {
+        alert("업로드 실패: " + (e.message || e));
+      }
+    } else {
+      try {
+        const id = await enqueueFile(note.id, toUse);
+        alert(
+          "오프라인이라 파일을 저장했습니다. 온라인 복귀 시 자동 업로드됩니다. (id: " +
+            id +
+            ")"
+        );
+      } catch (e) {
+        alert("파일 큐 저장 실패: " + e.message);
+      }
+    }
+    e.target.value = "";
+  };
 
   if (!note)
     return (
@@ -56,7 +114,7 @@ export default function Editor({ note, onChange, onDelete, onTogglePin }) {
     );
 
   return (
-    <div className="editor">
+    <div style={{ padding: 16 }}>
       <div
         style={{
           display: "flex",
@@ -83,6 +141,17 @@ export default function Editor({ note, onChange, onDelete, onTogglePin }) {
             삭제
           </button>
         </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <CompressionControls
+          enabled={compressionEnabled}
+          setEnabled={setCompressionEnabled}
+          quality={quality}
+          setQuality={setQuality}
+          maxDim={maxDim}
+          setMaxDim={setMaxDim}
+        />
       </div>
 
       <div className="textarea">

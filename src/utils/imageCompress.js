@@ -13,7 +13,7 @@ export async function compressImageFile(file, options = {}) {
       URL.revokeObjectURL(url);
       resolve(i);
     };
-    i.onerror = (e) => {
+    i.onerror = () => {
       URL.revokeObjectURL(url);
       reject(new Error("이미지 로드 실패"));
     };
@@ -21,7 +21,6 @@ export async function compressImageFile(file, options = {}) {
   });
 
   let { width, height } = img;
-  // calculate target size keeping aspect ratio
   const ratio = Math.min(1, maxWidth / width, maxHeight / height);
   const targetW = Math.round(width * ratio);
   const targetH = Math.round(height * ratio);

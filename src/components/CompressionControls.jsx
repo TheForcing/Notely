@@ -9,16 +9,24 @@ export default function CompressionControls({
   setMaxDim,
 }) {
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-      <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+    <div
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+        flexWrap: "wrap",
+      }}
+    >
+      <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <input
           type="checkbox"
           checked={enabled}
           onChange={(e) => setEnabled(e.target.checked)}
         />
-        이미지 압축 사용
+        이미지 압축
       </label>
-      <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+
+      <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
         품질
         <input
           type="range"
@@ -30,13 +38,14 @@ export default function CompressionControls({
         />
         {Math.round(quality * 100)}%
       </label>
-      <label>
-        최대너비
+
+      <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        최대 길이(px)
         <input
           type="number"
           value={maxDim}
           onChange={(e) => setMaxDim(parseInt(e.target.value || 0))}
-          style={{ width: 80, marginLeft: 6 }}
+          style={{ width: 100 }}
         />
       </label>
     </div>

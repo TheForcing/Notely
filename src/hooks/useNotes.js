@@ -20,6 +20,7 @@ import {
   removeFileFromQueue,
   markFileStatus,
   getAllFiles,
+  setFilePriority,
 } from "../utils/idbQueue";
 
 const STORAGE_KEY = "notely_notes_v2";
@@ -37,15 +38,18 @@ function saveJSON(key, v) {
   } catch (e) {}
 }
 
+const CHANNEL_NAME = "notely-file-queue";
+
 export default function useNotes() {
   const [notes, setNotes] = useState(() => loadJSON(STORAGE_KEY, []));
   const [activeNoteId, setActiveNoteId] = useState(notes[0]?.id || null);
-  const [queueFiles, setQueueFiles] = useState([]); // from IndexedDB
-  const [queueProgress, setQueueProgress] = useState({}); // {id: pct}
+  const [queueFiles, setQueueFiles] = useState([]);
+  const [queueProgress, setQueueProgress] = useState({});
   const userRef = useRef(null);
   const unsubSnapshotRef = useRef(null);
   const processingRef = useRef(false);
   const MAX_ATTEMPTS = 5;
+  const bcRef = useRef(null);
 
   useEffect(() => saveJSON(STORAGE_KEY, notes), [notes]);
 
@@ -72,7 +76,26 @@ export default function useNotes() {
     return () => window.removeEventListener("online", onOnline);
   }, []);
 
-  // load all queue items into memory for UI
+  // BroadcastChannel 구독: 다른 탭에서의 큐 변경을 실시간으로 반영
+  useEffect(() => {
+    try {
+      const bc = new BroadcastChannel(CHANNEL_NAME);
+      bc.onmessage = (ev) => {
+        if (ev?.data?.type === "queue-updated") {
+          // 간단히 전체 큐 리프레시
+          refreshQueue();
+        }
+      };
+      bcRef.current = bc;
+      return () => {
+        bc.close();
+        bcRef.current = null;
+      };
+    } catch (e) {
+      console.warn("BroadcastChannel not available", e);
+    }
+  }, []);
+
   const refreshQueue = useCallback(async () => {
     try {
       const all = await getAllFiles();
@@ -197,9 +220,8 @@ export default function useNotes() {
     [notes]
   );
 
-  // enqueue file into IndexedDB
   const enqueueFile = useCallback(
-    async (noteId, file) => {
+    async (noteId, file, priority = 0) => {
       const id =
         Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
       await addFileToQueue({
@@ -209,10 +231,9 @@ export default function useNotes() {
         type: file.type,
         size: file.size,
         blob: file,
+        priority,
       });
-      // update local queue UI
       await refreshQueue();
-      // optional placeholder in notes
       setNotes((prev) =>
         prev.map((n) =>
           n.id === noteId
@@ -231,24 +252,21 @@ export default function useNotes() {
     [refreshQueue]
   );
 
-  // process queue with exponential backoff on errors
+  // process queue (uses priority ordering from getPendingFiles)
   const processFileQueue = useCallback(async () => {
     if (processingRef.current) return;
     processingRef.current = true;
     try {
       const user = userRef.current;
       if (!user || !navigator.onLine) return;
-      // get pending and error items that still are below max attempts
       const pending = await getPendingFiles(100);
       for (const p of pending) {
         try {
-          // skip if too many attempts
           if ((p.attempts || 0) >= MAX_ATTEMPTS) {
             await markFileStatus(p.id, "failed");
             continue;
           }
           await markFileStatus(p.id, "processing");
-          // reset progress
           setQueueProgress((prev) => ({ ...prev, [p.id]: 0 }));
           const { finished } = startUploadUserFile(
             user.uid,
@@ -261,7 +279,6 @@ export default function useNotes() {
           const meta = await finished;
           await addAttachmentMeta(p.noteId, meta);
           await removeFileFromQueue(p.id);
-          // refresh queue view & remove progress
           setQueueProgress((prev) => {
             const c = { ...prev };
             delete c[p.id];
@@ -271,13 +288,11 @@ export default function useNotes() {
         } catch (e) {
           console.error("file queue upload failed", p.id, e);
           await markFileStatus(p.id, "error");
-          // exponential backoff: wait based on attempts before next overall loop
-          const rec = await (async () => {
-            const dbRes = await getAllFiles();
-            return dbRes.find((r) => r.id === p.id);
-          })();
-          const attempts = rec && rec.attempts ? rec.attempts : p.attempts || 0;
-          const delay = Math.min(30000, Math.pow(2, attempts) * 1000); // cap 30s
+          // backoff based on attempts
+          const all = await getAllFiles();
+          const rec = all.find((r) => r.id === p.id) || p;
+          const attempts = rec.attempts || 0;
+          const delay = Math.min(30000, Math.pow(2, attempts) * 1000);
           await new Promise((res) => setTimeout(res, delay));
         }
       }
@@ -287,13 +302,50 @@ export default function useNotes() {
     processingRef.current = false;
   }, [addAttachmentMeta, refreshQueue]);
 
-  // manual retry of a specific queued item
+  // move queued item priority up (increase) or down (decrease)
+  const moveQueuedFileUp = useCallback(
+    async (id) => {
+      try {
+        const all = await getAllFiles();
+        const item = all.find((x) => x.id === id);
+        if (!item) return;
+        // increase priority by 1 (or set to max+1)
+        const maxPriority = Math.max(0, ...all.map((x) => x.priority || 0));
+        const newPriority =
+          (item.priority || 0) >= maxPriority
+            ? (item.priority || 0) + 1
+            : (item.priority || 0) + 1;
+        await setFilePriority(id, newPriority);
+        await refreshQueue();
+      } catch (e) {
+        console.warn("moveQueuedFileUp", e);
+      }
+    },
+    [refreshQueue]
+  );
+
+  const moveQueuedFileDown = useCallback(
+    async (id) => {
+      try {
+        const all = await getAllFiles();
+        const item = all.find((x) => x.id === id);
+        if (!item) return;
+        // decrease priority by 1 (not less than -1000000)
+        const newPriority = (item.priority || 0) - 1;
+        await setFilePriority(id, newPriority);
+        await refreshQueue();
+      } catch (e) {
+        console.warn("moveQueuedFileDown", e);
+      }
+    },
+    [refreshQueue]
+  );
+
   const retryQueuedFile = useCallback(
     async (id) => {
       try {
         await markFileStatus(id, "pending");
         await refreshQueue();
-        // try processing immediately
         processFileQueue();
       } catch (e) {
         console.warn("retryQueuedFile", e);
@@ -302,7 +354,6 @@ export default function useNotes() {
     [processFileQueue, refreshQueue]
   );
 
-  // remove queued file (user wants to discard)
   const removeQueuedFile = useCallback(
     async (id) => {
       try {
@@ -315,7 +366,6 @@ export default function useNotes() {
     [refreshQueue]
   );
 
-  // expose
   return {
     notes,
     rawNotes: notes,
@@ -332,5 +382,7 @@ export default function useNotes() {
     refreshQueue,
     retryQueuedFile,
     removeQueuedFile,
+    moveQueuedFileUp,
+    moveQueuedFileDown,
   };
 }

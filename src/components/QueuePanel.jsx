@@ -8,9 +8,10 @@ export default function QueuePanel({
   retryQueuedFile,
   removeQueuedFile,
   processFileQueue,
+  moveQueuedFileUp,
+  moveQueuedFileDown,
 }) {
   useEffect(() => {
-    // refresh once on mount
     refreshQueue && refreshQueue();
   }, []);
 
@@ -81,7 +82,8 @@ export default function QueuePanel({
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{f.name}</div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>
-                노트: {f.noteId} • 상태: {f.status} • 시도: {f.attempts || 0}
+                노트: {f.noteId} • 상태: {f.status} • 시도: {f.attempts || 0} •
+                우선순위: {f.priority || 0}
               </div>
               <div
                 style={{
@@ -102,7 +104,20 @@ export default function QueuePanel({
                 />
               </div>
             </div>
+
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <button
+                onClick={() => moveQueuedFileUp && moveQueuedFileUp(f.id)}
+                style={{ padding: "6px 8px" }}
+              >
+                위로
+              </button>
+              <button
+                onClick={() => moveQueuedFileDown && moveQueuedFileDown(f.id)}
+                style={{ padding: "6px 8px" }}
+              >
+                아래
+              </button>
               <button
                 onClick={() => retryQueuedFile && retryQueuedFile(f.id)}
                 style={{ padding: "6px 8px" }}

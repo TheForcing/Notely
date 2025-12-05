@@ -365,6 +365,25 @@ export default function useNotes() {
     },
     [refreshQueue]
   );
+  const reorderQueue = useCallback(
+    async (orderedIds) => {
+      try {
+        // orderedIds: [id1, id2, ...] — 맨 앞이 가장 높은 우선순위
+        // assign descending priority (e.g. start from length -> 1)
+        const max = orderedIds.length;
+        for (let i = 0; i < orderedIds.length; i++) {
+          const id = orderedIds[i];
+          const priority = max - i; // 맨 앞(0)은 max, 뒤로 갈수록 작아짐
+          await setFilePriority(id, priority);
+        }
+        // 우선순위 재할당 후 큐 갱신
+        await refreshQueue();
+      } catch (e) {
+        console.warn("reorderQueue failed", e);
+      }
+    },
+    [refreshQueue]
+  );
 
   return {
     notes,
@@ -384,5 +403,6 @@ export default function useNotes() {
     removeQueuedFile,
     moveQueuedFileUp,
     moveQueuedFileDown,
+    reorderQueue, // <-- 추가
   };
 }

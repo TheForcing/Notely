@@ -1,5 +1,16 @@
 // src/components/QueuePanel.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo } from "react";
+
+function formatSec(s) {
+  if (s == null) return "??:??";
+  if (s <= 0) return "0s";
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
 
 export default function QueuePanel({
   queueFiles = [],
@@ -11,102 +22,45 @@ export default function QueuePanel({
   moveQueuedFileUp,
   moveQueuedFileDown,
   reorderQueue,
+  estimateEtaForPending,
+  globalAvgSpeed,
 }) {
-  const [localOrder, setLocalOrder] = useState(queueFiles.map((f) => f.id));
-  const dragSrcIdRef = useRef(null);
-  const listRef = useRef(null);
-
-  // when external queueFiles update, sync local order (preserve items that remain)
-  useEffect(() => {
-    const ids = queueFiles.map((f) => f.id);
-    // if localOrder doesn't match new ids (e.g. new item added/removed), rebuild sensible localOrder
-    setLocalOrder((prev) => {
-      // preserve previous ordering but append new ones & remove missing ones
-      const setIds = new Set(ids);
-      const preserved = prev.filter((id) => setIds.has(id));
-      const appended = ids.filter((id) => !preserved.includes(id));
-      return [...preserved, ...appended];
-    });
-  }, [queueFiles]);
-
   useEffect(() => {
     refreshQueue && refreshQueue();
   }, []);
 
-  // drag handlers
-  const onDragStart = (e, id) => {
-    dragSrcIdRef.current = id;
-    e.dataTransfer.effectAllowed = "move";
-    // for firefox; set some data
-    try {
-      e.dataTransfer.setData("text/plain", id);
-    } catch (err) {}
-    e.currentTarget.classList.add("dragging");
-  };
-
-  const onDragOver = (e, overId) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    // show insertion visually by reordering localOrder
-    const srcId = dragSrcIdRef.current;
-    if (!srcId || srcId === overId) return;
-    setLocalOrder((prev) => {
-      const next = prev.slice();
-      const srcIndex = next.indexOf(srcId);
-      const overIndex = next.indexOf(overId);
-      if (srcIndex === -1 || overIndex === -1) return prev;
-      // remove src
-      next.splice(srcIndex, 1);
-      // insert before overIndex (if dragging downward, after removal the index may shift)
-      const insertIndex = next.indexOf(overId);
-      next.splice(insertIndex, 0, srcId);
-      return next;
-    });
-  };
-
-  const onDragEnd = (e) => {
-    e.currentTarget.classList.remove("dragging");
-    dragSrcIdRef.current = null;
-  };
-
-  const onDrop = async (e) => {
-    e.preventDefault();
-    const srcId =
-      dragSrcIdRef.current ||
-      (() => {
-        try {
-          return e.dataTransfer.getData("text/plain");
-        } catch {
-          return null;
-        }
-      })();
-    // if no src recorded, fallback to current localOrder
-    if (!srcId) {
-      // still try to reorder using localOrder
-      if (reorderQueue) await reorderQueue(localOrder);
-      return;
-    }
-    // apply reorder: localOrder already updated during dragover; just call reorderQueue
-    if (reorderQueue) {
-      try {
-        await reorderQueue(localOrder);
-      } catch (err) {
-        console.warn("reorderQueue error", err);
+  // compute overall ETA by summing (for items not yet uploaded) remaining bytes divided by expected speed
+  const overallEtaSec = useMemo(() => {
+    // order by priority desc then createdAt asc (queueFiles should already be sorted)
+    const list = queueFiles || [];
+    // for each item: if progress exists, use remaining from progress; else use full size
+    let totalRemaining = 0;
+    list.forEach((f) => {
+      const p = queueProgress[f.id];
+      if (
+        p &&
+        typeof p.bytesTransferred === "number" &&
+        typeof p.totalBytes === "number"
+      ) {
+        totalRemaining += Math.max(
+          0,
+          (p.totalBytes || f.size || 0) - (p.bytesTransferred || 0)
+        );
+      } else {
+        totalRemaining += f.size || 0;
       }
-    }
-    dragSrcIdRef.current = null;
-  };
+    });
+    const speed = globalAvgSpeed || 50; // fallback bytes/sec
+    if (speed <= 0) return null;
+    return Math.ceil(totalRemaining / speed);
+  }, [queueFiles, queueProgress, globalAvgSpeed]);
 
   const pendingCount = queueFiles.filter((f) => f.status === "pending").length;
-
-  // helper to map id -> file
-  const fileById = {};
-  for (const f of queueFiles) fileById[f.id] = f;
 
   return (
     <aside
       style={{
-        width: 320,
+        width: 360,
         borderLeft: "1px solid #e5e7eb",
         padding: 12,
         background: "#fff",
@@ -142,7 +96,6 @@ export default function QueuePanel({
       </div>
 
       <div
-        ref={listRef}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -151,20 +104,22 @@ export default function QueuePanel({
           overflow: "auto",
         }}
       >
-        {localOrder.length === 0 && (
+        {queueFiles.length === 0 && (
           <div style={{ color: "#6b7280" }}>큐가 비어있습니다.</div>
         )}
-        {localOrder.map((id) => {
-          const f = fileById[id];
-          if (!f) return null;
+        {queueFiles.map((f) => {
+          const prog = queueProgress[f.id] || {};
+          const eta =
+            prog.etaSec != null
+              ? prog.etaSec
+              : estimateEtaForPending
+              ? estimateEtaForPending(f)
+              : null;
+          const speed = prog.speedBytesPerSec || globalAvgSpeed || 0;
+          const speedLabel = speed ? `${Math.round(speed / 1024)} KB/s` : "—";
           return (
             <div
               key={f.id}
-              draggable
-              onDragStart={(e) => onDragStart(e, f.id)}
-              onDragOver={(e) => onDragOver(e, f.id)}
-              onDragEnd={onDragEnd}
-              onDrop={onDrop}
               style={{
                 padding: 8,
                 border: "1px solid #eef2ff",
@@ -173,14 +128,21 @@ export default function QueuePanel({
                 display: "flex",
                 gap: 8,
                 alignItems: "center",
-                cursor: "move",
               }}
             >
-              <div style={{ width: 28, textAlign: "center", fontWeight: 700 }}>
-                ::
-              </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{f.name}</div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{f.name}</div>
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                    {formatSec(eta)}
+                  </div>
+                </div>
                 <div style={{ fontSize: 12, color: "#6b7280" }}>
                   노트: {f.noteId} • 상태: {f.status} • 시도: {f.attempts || 0}{" "}
                   • 우선순위: {f.priority || 0}
@@ -197,11 +159,14 @@ export default function QueuePanel({
                   <div
                     style={{
                       height: "100%",
-                      width: `${queueProgress[f.id] || 0}%`,
+                      width: `${prog.pct || 0}%`,
                       background: "#2563eb",
                       transition: "width 0.2s",
                     }}
                   />
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+                  속도: {speedLabel}
                 </div>
               </div>
 
@@ -240,6 +205,31 @@ export default function QueuePanel({
             </div>
           );
         })}
+      </div>
+
+      <div
+        style={{ marginTop: 12, paddingTop: 8, borderTop: "1px solid #eee" }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700 }}>전체 예상 소요</div>
+          <div style={{ fontSize: 13 }}>
+            {overallEtaSec != null
+              ? overallEtaSec > 3600
+                ? `${Math.round(overallEtaSec / 3600)}h`
+                : `${Math.round(overallEtaSec / 60)}m`
+              : "알수없음"}
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+          평균속도:{" "}
+          {globalAvgSpeed ? `${Math.round(globalAvgSpeed / 1024)} KB/s` : "—"}
+        </div>
       </div>
     </aside>
   );

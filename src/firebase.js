@@ -26,8 +26,7 @@ export const storage = getStorage(app);
 
 /**
  * Start upload and return { task, finished }.
- * finished resolves to metadata { path, url, name, size, contentType }.
- * Call task.cancel() to cancel if needed.
+ * onProgress will be invoked with { pct, bytesTransferred, totalBytes }.
  */
 export function startUploadUserFile(uid, noteId, file, onProgress) {
   if (!uid)
@@ -40,9 +39,11 @@ export function startUploadUserFile(uid, noteId, file, onProgress) {
     task.on(
       "state_changed",
       (snapshot) => {
-        if (onProgress && snapshot.totalBytes) {
-          const pct = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          onProgress(Math.round(pct));
+        const bytesTransferred = snapshot.bytesTransferred || 0;
+        const totalBytes = snapshot.totalBytes || file.size || 0;
+        const pct = totalBytes > 0 ? (bytesTransferred / totalBytes) * 100 : 0;
+        if (onProgress) {
+          onProgress({ pct: Math.round(pct), bytesTransferred, totalBytes });
         }
       },
       (error) => {

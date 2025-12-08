@@ -44,8 +44,8 @@ export default function useNotes() {
   const [notes, setNotes] = useState(() => loadJSON(STORAGE_KEY, []));
   const [activeNoteId, setActiveNoteId] = useState(notes[0]?.id || null);
   const [queueFiles, setQueueFiles] = useState([]);
-  const [queueProgress, setQueueProgress] = useState({}); // { id: { pct, bytesTransferred, totalBytes, speedBytesPerSec, etaSec } }
-  const [globalAvgSpeed, setGlobalAvgSpeed] = useState(0); // bytes/sec observed across uploads (EMA)
+  const [queueProgress, setQueueProgress] = useState({}); // { id: { pct, bytesTransferred, totalBytes, speedBytesPerSec, etaSec, history: [{t, speed}], notified: bool } }
+  const [globalAvgSpeed, setGlobalAvgSpeed] = useState(0);
   const userRef = useRef(null);
   const unsubSnapshotRef = useRef(null);
   const processingRef = useRef(false);
@@ -251,14 +251,37 @@ export default function useNotes() {
     [refreshQueue]
   );
 
-  // process queue with speed & ETA tracking
+  // helper: push history sample (keeps last N samples)
+  const pushHistorySample = useCallback((id, sample) => {
+    setQueueProgress((prev) => {
+      const cur = prev[id] || { history: [] };
+      const history = (cur.history || []).concat([sample]).slice(-60); // keep last 60 samples
+      return { ...prev, [id]: { ...cur, history } };
+    });
+  }, []);
+
+  // helper: notify user (permission must be granted)
+  const notify = useCallback((title, body) => {
+    try {
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        new Notification(title, { body });
+      }
+    } catch (e) {
+      console.warn("notify failed", e);
+    }
+  }, []);
+
+  // process queue with speed & ETA tracking + notifications
   const processFileQueue = useCallback(async () => {
     if (processingRef.current) return;
     processingRef.current = true;
     try {
       const user = userRef.current;
       if (!user || !navigator.onLine) return;
-      const pending = await getPendingFiles(100); // already ordered by priority
+      const pending = await getPendingFiles(100);
       for (const p of pending) {
         try {
           if ((p.attempts || 0) >= MAX_ATTEMPTS) {
@@ -267,10 +290,8 @@ export default function useNotes() {
           }
           await markFileStatus(p.id, "processing");
 
-          // prepare per-file speed estimation
           let lastTime = Date.now();
           let lastBytes = 0;
-          // set initial progress
           setQueueProgress((prev) => ({
             ...prev,
             [p.id]: {
@@ -279,6 +300,8 @@ export default function useNotes() {
               totalBytes: p.size || 0,
               speedBytesPerSec: 0,
               etaSec: null,
+              history: [],
+              notified: false,
             },
           }));
 
@@ -287,16 +310,15 @@ export default function useNotes() {
             p.noteId,
             p.blob,
             (info) => {
-              // info: { pct, bytesTransferred, totalBytes }
               const now = Date.now();
-              const dt = Math.max(1, now - lastTime) / 1000; // seconds
+              const dt = Math.max(1, now - lastTime) / 1000;
               const bytes = info.bytesTransferred || 0;
               const delta = bytes - lastBytes;
-              const instantSpeed = delta > 0 ? delta / dt : 0; // bytes/sec
+              const instantSpeed = delta > 0 ? delta / dt : 0;
               lastTime = now;
               lastBytes = bytes;
 
-              // update global average speed (EMA)
+              // update global avg speed (EMA)
               setGlobalAvgSpeed((prev) => {
                 const alpha = 0.25;
                 const next =
@@ -306,10 +328,9 @@ export default function useNotes() {
                 return next;
               });
 
-              // estimate ETA
+              // compute ETA
               const totalBytes = info.totalBytes || p.size || 0;
               const remaining = Math.max(0, totalBytes - bytes);
-              // choose speed: prefer instantSpeed, fallback to globalAvgSpeed
               const speed =
                 instantSpeed > 50
                   ? instantSpeed
@@ -318,33 +339,67 @@ export default function useNotes() {
                   : instantSpeed;
               const etaSec = speed > 0 ? Math.ceil(remaining / speed) : null;
 
-              setQueueProgress((prev) => ({
-                ...prev,
-                [p.id]: {
-                  pct: info.pct,
-                  bytesTransferred: bytes,
-                  totalBytes,
-                  speedBytesPerSec: speed,
-                  etaSec,
-                },
-              }));
+              // update progress state and history
+              setQueueProgress((prev) => {
+                const cur = prev[p.id] || {};
+                const history = (cur.history || [])
+                  .concat([{ t: now, speed: Math.round(speed) }])
+                  .slice(-60);
+                return {
+                  ...prev,
+                  [p.id]: {
+                    ...cur,
+                    pct: info.pct,
+                    bytesTransferred: bytes,
+                    totalBytes,
+                    speedBytesPerSec: Math.round(speed),
+                    etaSec,
+                    history,
+                    notified: cur.notified,
+                  },
+                };
+              });
+
+              // also push history (for other parts that subscribe)
+              pushHistorySample(p.id, { t: now, speed: Math.round(speed) });
+
+              // send ETA notification if below threshold and not already notified
+              const notifyThresholdSec = 10;
+              setQueueProgress((prev) => {
+                const cur = prev[p.id] || {};
+                const alreadyNotified = cur.notified;
+                if (
+                  etaSec !== null &&
+                  etaSec <= notifyThresholdSec &&
+                  !alreadyNotified
+                ) {
+                  notify(
+                    "업로드 곧 완료",
+                    `${p.name} 업로드가 ${etaSec}초 내에 완료될 예정입니다.`
+                  );
+                  return { ...prev, [p.id]: { ...cur, notified: true } };
+                }
+                return prev;
+              });
             }
           );
 
           const meta = await finished;
-          // on success: remove from queue & attach
+          // upload done -> success notification & cleanup
           await addAttachmentMeta(p.noteId, meta);
           await removeFileFromQueue(p.id);
+          // clear progress and notify completion
           setQueueProgress((prev) => {
             const c = { ...prev };
             delete c[p.id];
             return c;
           });
+          notify("업로드 완료", `${p.name} 업로드가 완료되었습니다.`);
           await refreshQueue();
         } catch (e) {
           console.error("file queue upload failed", p.id, e);
           await markFileStatus(p.id, "error");
-          // backoff
+          // backoff and continue
           const all = await getAllFiles();
           const rec = all.find((r) => r.id === p.id) || p;
           const attempts = rec.attempts || 0;
@@ -356,20 +411,26 @@ export default function useNotes() {
       console.error("processFileQueue", e);
     }
     processingRef.current = false;
-  }, [addAttachmentMeta, refreshQueue, globalAvgSpeed]);
+  }, [
+    addAttachmentMeta,
+    refreshQueue,
+    pushHistorySample,
+    notify,
+    globalAvgSpeed,
+  ]);
 
-  // estimate ETA helper for items not yet started
+  // estimate ETA for pending items using globalAvgSpeed
   const estimateEtaForPending = useCallback(
     (item) => {
       const size = item.size || 0;
-      const speed = globalAvgSpeed || 50; // fallback minimal speed (bytes/sec)
+      const speed = globalAvgSpeed || 50;
       if (!size || !speed) return null;
       return Math.ceil(size / speed);
     },
     [globalAvgSpeed]
   );
 
-  // reorderQueue (for drag & drop): assign new priorities
+  // reorderQueue helper
   const reorderQueue = useCallback(
     async (orderedIds) => {
       try {
@@ -387,7 +448,6 @@ export default function useNotes() {
     [refreshQueue]
   );
 
-  // move up/down, retry, remove (unchanged)
   const moveQueuedFileUp = useCallback(
     async (id) => {
       try {

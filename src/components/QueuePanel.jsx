@@ -1,5 +1,6 @@
 // src/components/QueuePanel.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect } from "react";
+import ETAChart from "./ETAChart";
 
 function formatSec(s) {
   if (s == null) return "??:??";
@@ -29,13 +30,26 @@ export default function QueuePanel({
     refreshQueue && refreshQueue();
   }, []);
 
-  // compute overall ETA by summing (for items not yet uploaded) remaining bytes divided by expected speed
-  const overallEtaSec = useMemo(() => {
-    // order by priority desc then createdAt asc (queueFiles should already be sorted)
-    const list = queueFiles || [];
-    // for each item: if progress exists, use remaining from progress; else use full size
+  // request notification permission (can be triggered by user)
+  const requestNotify = async () => {
+    if (typeof Notification === "undefined")
+      return alert("브라우저가 Notification을 지원하지 않습니다.");
+    if (Notification.permission === "granted")
+      return alert("이미 허용되어 있습니다.");
+    try {
+      const p = await Notification.requestPermission();
+      if (p === "granted") alert("알림 권한이 허용되었습니다.");
+      else alert("알림 권한이 허용되지 않았습니다.");
+    } catch (e) {
+      console.warn(e);
+      alert("알림 권한 요청 중 오류");
+    }
+  };
+
+  // compute overall ETA
+  const overallEtaSec = (() => {
     let totalRemaining = 0;
-    list.forEach((f) => {
+    for (const f of queueFiles || []) {
       const p = queueProgress[f.id];
       if (
         p &&
@@ -49,18 +63,18 @@ export default function QueuePanel({
       } else {
         totalRemaining += f.size || 0;
       }
-    });
-    const speed = globalAvgSpeed || 50; // fallback bytes/sec
+    }
+    const speed = globalAvgSpeed || 50;
     if (speed <= 0) return null;
     return Math.ceil(totalRemaining / speed);
-  }, [queueFiles, queueProgress, globalAvgSpeed]);
+  })();
 
   const pendingCount = queueFiles.filter((f) => f.status === "pending").length;
 
   return (
     <aside
       style={{
-        width: 360,
+        width: 380,
         borderLeft: "1px solid #e5e7eb",
         padding: 12,
         background: "#fff",
@@ -75,8 +89,13 @@ export default function QueuePanel({
         }}
       >
         <h3 style={{ margin: 0 }}>Upload Queue</h3>
-        <div style={{ fontSize: 12, color: "#6b7280" }}>
-          {pendingCount} pending
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            {pendingCount} pending
+          </div>
+          <button onClick={requestNotify} style={{ padding: "6px 8px" }}>
+            알림 허용
+          </button>
         </div>
       </div>
 
@@ -117,6 +136,7 @@ export default function QueuePanel({
               : null;
           const speed = prog.speedBytesPerSec || globalAvgSpeed || 0;
           const speedLabel = speed ? `${Math.round(speed / 1024)} KB/s` : "—";
+          const history = prog.history || [];
           return (
             <div
               key={f.id}
@@ -130,19 +150,15 @@ export default function QueuePanel({
                 alignItems: "center",
               }}
             >
-              <div style={{ flex: 1 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{f.name}</div>
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>
-                    {formatSec(eta)}
-                  </div>
+              <div style={{ width: 140 }}>
+                <ETAChart history={history} width={140} height={40} />
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+                  속도: {speedLabel} • ETA: {formatSec(eta)}
                 </div>
+              </div>
+
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{f.name}</div>
                 <div style={{ fontSize: 12, color: "#6b7280" }}>
                   노트: {f.noteId} • 상태: {f.status} • 시도: {f.attempts || 0}{" "}
                   • 우선순위: {f.priority || 0}
@@ -165,9 +181,6 @@ export default function QueuePanel({
                     }}
                   />
                 </div>
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
-                  속도: {speedLabel}
-                </div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -184,7 +197,9 @@ export default function QueuePanel({
                   아래
                 </button>
                 <button
-                  onClick={() => retryQueuedFile && retryQueuedFile(f.id)}
+                  onClick={() =>
+                    /* retry */ retryQueuedFile && retryQueuedFile(f.id)
+                  }
                   style={{ padding: "6px 8px" }}
                 >
                   재시도

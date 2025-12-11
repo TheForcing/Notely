@@ -1,10 +1,9 @@
 // src/pages/Home.jsx
-import React from "react";
-import Sidebar from "../components/Sidebar";
-import NotesList from "../components/NotesList";
+import React, { useState } from "react";
 import Editor from "../components/EditorWithIndexedDB";
-import QueuePanel from "../components/QueuePanel";
 import useNotes from "../hooks/useNotes";
+import NotesList from "../components/NotesList";
+import SearchBar from "../components/SearchBar";
 
 export default function Home() {
   const {
@@ -13,45 +12,50 @@ export default function Home() {
     createNote,
     updateNote,
     deleteNote,
-    addAttachmentMeta,
-    enqueueFile,
     activeNoteId,
     setActiveNoteId,
-    processFileQueue,
-    queueFiles,
-    queueProgress,
-    refreshQueue,
-    retryQueuedFile,
-    removeQueuedFile,
   } = useNotes();
+  const [query, setQuery] = useState("");
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
-      <Sidebar
-        onCreate={createNote}
-        exportNotes={() => JSON.stringify({ notes: rawNotes })}
-      />
-      <div style={{ flex: 1, display: "flex" }}>
+      <div
+        style={{
+          width: 320,
+          borderRight: "1px solid #e5e7eb",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <div style={{ padding: 12, borderBottom: "1px solid #f1f5f9" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 8,
+            }}
+          >
+            <h2 style={{ margin: 0 }}>Notely</h2>
+            <button onClick={createNote}>New</button>
+          </div>
+          <SearchBar value={query} onChange={setQuery} />
+        </div>
         <NotesList
           notes={notes}
           onSelect={setActiveNoteId}
           onDelete={deleteNote}
-          onTogglePin={() => {}}
           activeId={activeNoteId}
+          query={query}
         />
+      </div>
+
+      <div style={{ flex: 1 }}>
         <Editor
           note={rawNotes.find((n) => n.id === activeNoteId)}
           onChange={updateNote}
           onDelete={deleteNote}
           onTogglePin={() => {}}
-        />
-        <QueuePanel
-          queueFiles={queueFiles}
-          queueProgress={queueProgress}
-          refreshQueue={refreshQueue}
-          retryQueuedFile={retryQueuedFile}
-          removeQueuedFile={removeQueuedFile}
-          processFileQueue={processFileQueue}
         />
       </div>
     </div>

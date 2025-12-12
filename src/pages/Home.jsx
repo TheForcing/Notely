@@ -16,6 +16,8 @@ export default function Home() {
     setActiveNoteId,
   } = useNotes();
   const [query, setQuery] = useState("");
+  const [fuzzy, setFuzzy] = useState(true);
+  const [threshold, setThreshold] = useState(0.4);
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
@@ -39,7 +41,14 @@ export default function Home() {
             <h2 style={{ margin: 0 }}>Notely</h2>
             <button onClick={createNote}>New</button>
           </div>
-          <SearchBar value={query} onChange={setQuery} />
+          <SearchBar
+            value={query}
+            onChange={setQuery}
+            fuzzy={fuzzy}
+            onToggleFuzzy={setFuzzy}
+            threshold={threshold}
+            onChangeThreshold={setThreshold}
+          />
         </div>
         <NotesList
           notes={notes}
@@ -47,6 +56,8 @@ export default function Home() {
           onDelete={deleteNote}
           activeId={activeNoteId}
           query={query}
+          fuzzy={fuzzy}
+          threshold={threshold}
         />
       </div>
 

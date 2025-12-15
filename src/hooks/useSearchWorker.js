@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
-export default function useSearchWorker(notes, options) {
+export default function useSearchWorker(notes, options, delay = 300) {
   const workerRef = useRef(null);
+  const debounceTimerRef = useRef(null);
+  const requestIdRef = useRef(0);
+
   const [ready, setReady] = useState(false);
   const [results, setResults] = useState([]);
 
@@ -13,8 +16,17 @@ export default function useSearchWorker(notes, options) {
 
     workerRef.current.onmessage = (e) => {
       const { type, payload } = e.data;
-      if (type === "READY") setReady(true);
-      if (type === "RESULT") setResults(payload);
+
+      if (type === "READY") {
+        setReady(true);
+      }
+
+      if (type === "RESULT") {
+        // ✅ 최신 요청만 반영
+        if (payload.requestId === requestIdRef.current) {
+          setResults(payload.results);
+        }
+      }
     };
 
     return () => workerRef.current?.terminate();
@@ -31,11 +43,25 @@ export default function useSearchWorker(notes, options) {
   }, [notes, options]);
 
   const search = (query) => {
-    if (!ready || !workerRef.current) return;
-    workerRef.current.postMessage({
-      type: "SEARCH",
-      payload: { query },
-    });
+    if (!workerRef.current) return;
+
+    // 이전 디바운스 취소
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      requestIdRef.current += 1;
+      const currentId = requestIdRef.current;
+
+      workerRef.current.postMessage({
+        type: "SEARCH",
+        payload: {
+          query,
+          requestId: currentId,
+        },
+      });
+    }, delay);
   };
 
   return { search, results, ready };

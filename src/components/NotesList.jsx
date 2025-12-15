@@ -1,3 +1,61 @@
-import React from 'react'
-import NoteCard from './NoteCard'
-export default function NotesList({ notes, onSelect, onDelete, onTogglePin, activeId }){ return (<div className='w-96 border-r bg-gray-50 p-3 overflow-auto'>{notes.length===0 && <div className='p-4 text-sm text-gray-500'>노트가 없습니다.</div>}<ul className='space-y-2'>{notes.map(n=>(<li key={n.id}><NoteCard note={n} onSelect={()=>onSelect(n.id)} onDelete={()=>onDelete(n.id)} onTogglePin={()=>onTogglePin(n.id)} isActive={n.id===activeId} /></li>))}</ul></div>) }
+import React, { useEffect } from "react";
+import useSearchWorker from "../hooks/useSearchWorker";
+
+export default function NotesList({
+  notes,
+  query,
+  onSelect,
+  activeId,
+  fuzzy = true,
+  threshold = 0.4,
+}) {
+  const options = {
+    includeScore: true,
+    threshold,
+    ignoreLocation: true,
+    keys: [
+      { name: "title", weight: 0.7 },
+      { name: "tags", weight: 0.2 },
+      { name: "body", weight: 0.1 },
+    ],
+  };
+
+  const { search, results, ready } = useSearchWorker(notes, options);
+
+  useEffect(() => {
+    if (query && ready) {
+      search(query);
+    }
+  }, [query, ready]);
+
+  const list = query ? results : notes;
+
+  return (
+    <div style={{ width: 280, padding: 12 }}>
+      {!ready && query && (
+        <div style={{ fontSize: 12, color: "#6b7280" }}>
+          검색 인덱스 생성 중…
+        </div>
+      )}
+
+      {list.map((n) => (
+        <div
+          key={n.id}
+          onClick={() => onSelect(n.id)}
+          style={{
+            padding: 8,
+            marginBottom: 6,
+            borderRadius: 6,
+            background: n.id === activeId ? "#eef2ff" : "#fff",
+            cursor: "pointer",
+          }}
+        >
+          <strong>{n.title}</strong>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            {(n.body || "").slice(0, 80)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

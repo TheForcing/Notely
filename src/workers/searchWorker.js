@@ -24,17 +24,18 @@ self.onmessage = (e) => {
   }
 
   if (type === "SEARCH") {
-    if (!fuse) {
-      self.postMessage({ type: "RESULT", payload: [] });
-      return;
-    }
+    if (!fuse) return;
 
-    const { query, limit = 200 } = payload;
+    const { query, limit = 200, requestId } = payload;
+
     const results = fuse.search(query, { limit }).map((r) => r.item);
 
     self.postMessage({
       type: "RESULT",
-      payload: results,
+      payload: {
+        requestId,
+        results,
+      },
     });
   }
 };

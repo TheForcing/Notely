@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import useSearchWorker from "../hooks/useSearchWorker";
+import { buildSnippet, highlight } from "../utils/snippet";
 
 export default function NotesList({
   notes,
@@ -23,9 +24,7 @@ export default function NotesList({
   const { search, results, ready } = useSearchWorker(notes, options);
 
   useEffect(() => {
-    if (query && ready) {
-      search(query);
-    }
+    if (query && ready) search(query);
   }, [query, ready]);
 
   const list = query ? results : notes;
@@ -34,28 +33,37 @@ export default function NotesList({
     <div style={{ width: 280, padding: 12 }}>
       {!ready && query && (
         <div style={{ fontSize: 12, color: "#6b7280" }}>
-          검색 인덱스 생성 중…
+          검색 인덱스 준비 중…
         </div>
       )}
 
-      {list.map((n) => (
-        <div
-          key={n.id}
-          onClick={() => onSelect(n.id)}
-          style={{
-            padding: 8,
-            marginBottom: 6,
-            borderRadius: 6,
-            background: n.id === activeId ? "#eef2ff" : "#fff",
-            cursor: "pointer",
-          }}
-        >
-          <strong>{n.title}</strong>
-          <div style={{ fontSize: 12, color: "#6b7280" }}>
-            {(n.body || "").slice(0, 80)}
+      {list.map((n) => {
+        const snippet = query
+          ? buildSnippet(n.body || "", query)
+          : (n.body || "").slice(0, 80);
+
+        return (
+          <div
+            key={n.id}
+            onClick={() => onSelect(n.id)}
+            style={{
+              padding: 10,
+              marginBottom: 8,
+              borderRadius: 8,
+              background: n.id === activeId ? "#eef2ff" : "#fff",
+              cursor: "pointer",
+            }}
+          >
+            <div style={{ fontWeight: 700 }}>
+              {query ? highlight(n.title, query) : n.title}
+            </div>
+
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              {query ? highlight(snippet, query) : snippet}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
-import useSearchWorker from "../hooks/useSearchWorker";
+import useSharedSearch from "../hooks/useSharedSearch";
+import useKeyboardNavigation from "../hooks/useKeyboardNavigation";
 import { buildSnippet, highlight } from "../utils/snippet";
 
 export default function NotesList({
@@ -20,9 +21,12 @@ export default function NotesList({
       { name: "body", weight: 0.1 },
     ],
   };
-
-  const { search, results, ready } = useSearchWorker(notes, options);
-
+  const { search, results, ready } = useSharedSearch(notes, options);
+  const { activeIndex, setActiveIndex } = useKeyboardNavigation(
+    results.length,
+    (index) => openNote(results[index].id),
+    () => closeSearch()
+  );
   useEffect(() => {
     if (query && ready) search(query);
   }, [query, ready]);

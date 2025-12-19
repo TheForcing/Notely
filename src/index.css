@@ -60,3 +60,12 @@ body {
   border-radius: 6px;
   background: #fff;
 }
+.note-item {
+  padding: 10px;
+  cursor: pointer;
+}
+
+.note-item.active {
+  background: #eef2ff;
+  outline: 2px solid #6366f1;
+}

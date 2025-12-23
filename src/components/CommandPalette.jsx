@@ -1,13 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
 import NotesList from "./NotesList";
 
-export default function CommandPalette({ notes, onSelectNote, onClose }) {
+export default function CommandPalette({
+  notes,
+  onSelectNote,
+  onCommand,
+  onClose,
+}) {
   const [query, setQuery] = useState("");
   const inputRef = useRef(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  const isCommand = query.startsWith(">");
+
+  const commandItems = [
+    { id: "new", label: "새 노트 만들기" },
+    { id: "delete", label: "현재 노트 삭제" },
+  ].filter((c) => c.label.includes(query.replace(">", "").trim()));
 
   return (
     <div
@@ -36,7 +48,7 @@ export default function CommandPalette({ notes, onSelectNote, onClose }) {
           onKeyDown={(e) => {
             if (e.key === "Escape") onClose();
           }}
-          placeholder="명령 또는 노트 검색…"
+          placeholder="> 명령 또는 노트 검색"
           style={{
             width: "100%",
             padding: 14,
@@ -48,15 +60,32 @@ export default function CommandPalette({ notes, onSelectNote, onClose }) {
         />
 
         <div style={{ maxHeight: 360, overflowY: "auto" }}>
-          <NotesList
-            notes={notes}
-            query={query}
-            onSelect={(id) => {
-              onSelectNote(id);
-              onClose();
-            }}
-            onCloseSearch={onClose}
-          />
+          {isCommand ? (
+            <ul>
+              {commandItems.map((cmd) => (
+                <li
+                  key={cmd.id}
+                  onClick={() => onCommand(cmd.id)}
+                  style={{
+                    padding: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  ⌘ {cmd.label}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <NotesList
+              notes={notes}
+              query={query}
+              onSelect={(id) => {
+                onSelectNote(id);
+                onClose();
+              }}
+              onCloseSearch={onClose}
+            />
+          )}
         </div>
       </div>
     </div>

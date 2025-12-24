@@ -8,18 +8,66 @@ export default function CommandPalette({
   onClose,
 }) {
   const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
 
+  const isCommand = query.startsWith(">");
+
+  /* ---------------- 명령 목록 ---------------- */
+  const commandItems = [
+    { id: "new", label: "새 노트 만들기" },
+    { id: "delete", label: "현재 노트 삭제" },
+  ].filter((c) =>
+    c.label.toLowerCase().includes(query.replace(">", "").trim().toLowerCase())
+  );
+
+  /* ---------------- 노트 목록 ---------------- */
+  const filteredNotes = notes.filter((n) =>
+    n.title.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const items = isCommand ? commandItems : filteredNotes;
+
+  /* ---------------- 포커스 ---------------- */
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  const isCommand = query.startsWith(">");
+  /* 🔥 리스트 변경 시 인덱스 초기화 */
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query]);
 
-  const commandItems = [
-    { id: "new", label: "새 노트 만들기" },
-    { id: "delete", label: "현재 노트 삭제" },
-  ].filter((c) => c.label.includes(query.replace(">", "").trim()));
+  /* ---------------- 키보드 처리 ---------------- */
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") {
+      onClose();
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => (i + 1) % items.length);
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => (i === 0 ? items.length - 1 : i - 1));
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const item = items[activeIndex];
+      if (!item) return;
+
+      if (isCommand) {
+        onCommand(item.id);
+      } else {
+        onSelectNote(item.id);
+      }
+      onClose();
+    }
+  };
 
   return (
     <div
@@ -45,9 +93,7 @@ export default function CommandPalette({
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") onClose();
-          }}
+          onKeyDown={onKeyDown}
           placeholder="> 명령 또는 노트 검색"
           style={{
             width: "100%",
@@ -62,13 +108,13 @@ export default function CommandPalette({
         <div style={{ maxHeight: 360, overflowY: "auto" }}>
           {isCommand ? (
             <ul>
-              {commandItems.map((cmd) => (
+              {commandItems.map((cmd, i) => (
                 <li
                   key={cmd.id}
-                  onClick={() => onCommand(cmd.id)}
                   style={{
                     padding: 12,
                     cursor: "pointer",
+                    background: i === activeIndex ? "#eef2ff" : "transparent",
                   }}
                 >
                   ⌘ {cmd.label}
@@ -77,13 +123,13 @@ export default function CommandPalette({
             </ul>
           ) : (
             <NotesList
-              notes={notes}
-              query={query}
+              notes={filteredNotes}
+              activeIndex={activeIndex}
               onSelect={(id) => {
                 onSelectNote(id);
                 onClose();
               }}
-              onCloseSearch={onClose}
+              onHoverIndex={setActiveIndex}
             />
           )}
         </div>

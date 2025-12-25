@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import useRecentItems from "../hooks/useRecentItems";
 import NotesList from "./NotesList";
 
 export default function CommandPalette({
@@ -10,9 +11,10 @@ export default function CommandPalette({
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
+  const { recentItems, addRecentItem } = useRecentItems();
 
   const isCommand = query.startsWith(">");
-
+  const showRecent = query.trim() === "";
   /* ---------------- 명령 목록 ---------------- */
   const commandItems = [
     { id: "new", label: "새 노트 만들기" },

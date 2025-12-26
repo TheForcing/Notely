@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { COMMANDS } from "../commands/commands";
 import useRecentItems from "../hooks/useRecentItems";
 import NotesList from "./NotesList";
 
@@ -15,20 +16,19 @@ export default function CommandPalette({
 
   const isCommand = query.startsWith(">");
   const showRecent = query.trim() === "";
+  const keyword = query.replace(">", "").trim().toLowerCase();
   /* ---------------- 명령 목록 ---------------- */
-  const commandItems = [
-    { id: "new", label: "새 노트 만들기" },
-    { id: "delete", label: "현재 노트 삭제" },
-  ].filter((c) =>
-    c.label.toLowerCase().includes(query.replace(">", "").trim().toLowerCase())
+  const commandItems = COMMANDS.filter((c) =>
+    c.label.toLowerCase().includes(keyword)
   );
 
-  /* ---------------- 노트 목록 ---------------- */
-  const filteredNotes = notes.filter((n) =>
+  const noteItems = notes.filter((n) =>
     n.title.toLowerCase().includes(query.toLowerCase())
   );
 
-  const items = isCommand ? commandItems : filteredNotes;
+  /* ---------------- 노트 목록 ---------------- */
+
+  const items = showRecent ? recentItems : isCommand ? commandItems : noteItems;
 
   /* ---------------- 포커스 ---------------- */
   useEffect(() => {
@@ -42,10 +42,8 @@ export default function CommandPalette({
 
   /* ---------------- 키보드 처리 ---------------- */
   const onKeyDown = (e) => {
-    if (e.key === "Escape") {
-      onClose();
-      return;
-    }
+    if (e.key === "Escape") return onClose();
+    if (!items.length) return;
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -60,12 +58,13 @@ export default function CommandPalette({
     if (e.key === "Enter") {
       e.preventDefault();
       const item = items[activeIndex];
-      if (!item) return;
 
-      if (isCommand) {
-        onCommand(item.id);
-      } else {
+      if (item.type === "note" || item.title) {
         onSelectNote(item.id);
+        addRecentItem({ ...item, type: "note" });
+      } else {
+        onCommand(item.id);
+        addRecentItem({ ...item, type: "command" });
       }
       onClose();
     }

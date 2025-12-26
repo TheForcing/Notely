@@ -1,0 +1,17 @@
+export const COMMANDS = [
+  {
+    id: 'note.new',
+    label: '새 노트 만들기',
+    category: '노트',
+  },
+  {
+    id: 'note.delete',
+    label: '현재 노트 삭제',
+    category: '노트',
+  },
+  {
+    id: 'file.export',
+    label: '노트 내보내기',
+    category: '파일',
+  },
+]

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { COMMANDS } from "../commands/commands";
 import useRecentItems from "../hooks/useRecentItems";
 import NotesList from "./NotesList";
+import CommandPreview from "./CommandPreview";
 
 export default function CommandPalette({
   notes,
@@ -133,6 +134,14 @@ export default function CommandPalette({
               onHoverIndex={setActiveIndex}
             />
           )}
+        </div>
+        <div
+          style={{
+            borderLeft: "1px solid #e5e7eb",
+            background: "#f9fafb",
+          }}
+        >
+          <CommandPreview item={items[activeIndex]} />
         </div>
       </div>
     </div>

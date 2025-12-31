@@ -1,125 +1,126 @@
-import React, { useRef, useState } from "react";
-import NotesList from "./components/NotesList";
+import { useEffect, useState } from "react";
 import CommandPalette from "./components/CommandPalette";
-import SearchInput from "./components/SearchInput";
+import NotesList from "./components/NotesList";
+import Editor from "./components/Editor";
 
 import useCommandPalette from "./hooks/useCommandPalette";
-import useGlobalSearchShortcut from "./hooks/useGlobalSearchShortcut";
+import useUndo from "./hooks/useUndo";
+import { ToastProvider, useToast } from "./context/ToastContext";
 
-export default function App() {
-  /* ---------------- 상태 ---------------- */
-  const [notes, setNotes] = useState([
-    { id: "1", title: "첫 번째 노트", body: "리액트 메모 앱" },
-    { id: "2", title: "검색 기능", body: "Fuse.js + Worker" },
-  ]);
+/* ---------------- 내부 App ---------------- */
 
-  const [activeNoteId, setActiveNoteId] = useState(null);
+function AppInner() {
+  const { open, closePalette } = useCommandPalette();
+  const { showToast } = useToast();
+  const { capture, undo } = useUndo();
 
-  // 일반 검색 (/)
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const searchInputRef = useRef(null);
+  const [notes, setNotes] = useState([]);
+  const [currentNoteId, setCurrentNoteId] = useState(null);
 
-  // Cmd + K 팔레트
-  const { open: paletteOpen, closePalette, openPalette } = useCommandPalette();
+  /* ---------------- 초기 데이터 (임시) ---------------- */
+  useEffect(() => {
+    const initial = [
+      {
+        id: "1",
+        title: "Notely 구조",
+        content: "노트 앱 전체 구조 정리",
+      },
+      {
+        id: "2",
+        title: "Firebase API",
+        content: "Auth / Firestore / Storage 메모",
+      },
+    ];
+    setNotes(initial);
+    setCurrentNoteId(initial[0].id);
+  }, []);
 
-  /* ---------------- / 글로벌 검색 ---------------- */
-  const openSearch = () => {
-    setSearchOpen(true);
-    setTimeout(() => searchInputRef.current?.focus(), 0);
-  };
-
-  const closeSearch = () => {
-    setSearchOpen(false);
-    setQuery("");
-  };
-
-  useGlobalSearchShortcut(openSearch);
+  const currentNote = notes.find((n) => n.id === currentNoteId);
 
   /* ---------------- 명령 처리 ---------------- */
-  const handleCommand = (command) => {
-    // 🔥 1번 기능 핵심
-    if (command === "new") {
-      const id = Date.now().toString();
-      const note = {
-        id,
+
+  const handleCommand = (commandId) => {
+    if (commandId === "note.new") {
+      capture(notes);
+
+      const newNote = {
+        id: Date.now().toString(),
         title: "새 노트",
-        body: "",
+        content: "",
       };
-      setNotes((prev) => [note, ...prev]);
-      setActiveNoteId(id);
-      return;
+
+      setNotes((prev) => [newNote, ...prev]);
+      setCurrentNoteId(newNote.id);
+
+      showToast({ message: "새 노트가 생성되었습니다" });
     }
 
-    if (command === "delete" && activeNoteId) {
-      setNotes((prev) => prev.filter((n) => n.id !== activeNoteId));
-      setActiveNoteId(null);
-      return;
+    if (commandId === "note.delete") {
+      if (!currentNoteId) return;
+
+      capture(notes);
+
+      setNotes((prev) => prev.filter((n) => n.id !== currentNoteId));
+      setCurrentNoteId(null);
+
+      showToast({
+        message: "노트가 삭제되었습니다",
+        actionLabel: "Undo",
+        onAction: () => {
+          const prev = undo();
+          if (prev) {
+            setNotes(prev);
+            setCurrentNoteId(currentNoteId);
+          }
+        },
+      });
+    }
+
+    if (commandId === "file.export") {
+      showToast({ message: "노트 내보내기 (미구현)" });
     }
   };
+
+  /* ---------------- 렌더 ---------------- */
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
-      {/* ---------- Sidebar ---------- */}
-      <aside
-        style={{
-          width: 300,
-          borderRight: "1px solid #e5e7eb",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        {/* / 검색 입력 */}
-        {searchOpen && (
-          <div style={{ padding: 8 }}>
-            <SearchInput
-              ref={searchInputRef}
-              value={query}
-              onChange={setQuery}
-              onClose={closeSearch}
-            />
-          </div>
-        )}
+      {/* 사이드바 */}
+      <NotesList
+        notes={notes}
+        activeId={currentNoteId}
+        onSelect={setCurrentNoteId}
+      />
 
-        <NotesList
-          notes={notes}
-          query={query}
-          activeId={activeNoteId}
-          onSelect={(id) => {
-            setActiveNoteId(id);
-            closeSearch();
-          }}
-          onCloseSearch={closeSearch}
-        />
-      </aside>
+      {/* 에디터 */}
+      <Editor
+        note={currentNote}
+        onChange={(content) =>
+          setNotes((prev) =>
+            prev.map((n) => (n.id === currentNoteId ? { ...n, content } : n))
+          )
+        }
+      />
 
-      {/* ---------- Editor ---------- */}
-      <main style={{ flex: 1, padding: 24 }}>
-        {activeNoteId ? (
-          <div>
-            <h2>{notes.find((n) => n.id === activeNoteId)?.title}</h2>
-            <p>에디터 영역 (생략)</p>
-          </div>
-        ) : (
-          <div style={{ color: "#6b7280" }}>노트를 선택하세요</div>
-        )}
-      </main>
-
-      {/* ---------- Cmd + K ---------- */}
-      {paletteOpen && (
+      {/* Command Palette */}
+      {open && (
         <CommandPalette
           notes={notes}
-          onSelectNote={(id) => {
-            setActiveNoteId(id);
-            closePalette();
-          }}
-          onCommand={(cmd) => {
-            handleCommand(cmd);
-            closePalette();
-          }}
+          onSelectNote={setCurrentNoteId}
+          onCommand={handleCommand}
           onClose={closePalette}
         />
       )}
     </div>
+  );
+}
+
+/* ---------------- App Root ---------------- */
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
   );
 }

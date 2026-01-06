@@ -1,25 +1,32 @@
 import { useEffect, useState } from "react";
-import CommandPalette from "./components/CommandPalette";
+
 import NotesList from "./components/NotesList";
 import Editor from "./components/Editor";
+import CommandPalette from "./components/CommandPalette";
 
 import useCommandPalette from "./hooks/useCommandPalette";
-import useUndo from "./hooks/useUndo";
+import useUndoRedo from "./hooks/useUndoRedo";
+import useGlobalUndoRedo from "./hooks/useGlobalUndoRedo";
+
 import { ToastProvider, useToast } from "./context/ToastContext";
 
-/* ---------------- 내부 App ---------------- */
+/* ============================================================
+   내부 App (비즈니스 로직)
+============================================================ */
 
 function AppInner() {
   const { open, closePalette } = useCommandPalette();
   const { showToast } = useToast();
-  const { capture, undo } = useUndo();
+
+  const undoRedo = useUndoRedo();
 
   const [notes, setNotes] = useState([]);
   const [currentNoteId, setCurrentNoteId] = useState(null);
 
-  /* ---------------- 초기 데이터 (임시) ---------------- */
+  /* ---------------- 초기 데이터 ---------------- */
+
   useEffect(() => {
-    const initial = [
+    const initialNotes = [
       {
         id: "1",
         title: "Notely 구조",
@@ -31,17 +38,38 @@ function AppInner() {
         content: "Auth / Firestore / Storage 메모",
       },
     ];
-    setNotes(initial);
-    setCurrentNoteId(initial[0].id);
+
+    setNotes(initialNotes);
+    setCurrentNoteId(initialNotes[0].id);
   }, []);
 
   const currentNote = notes.find((n) => n.id === currentNoteId);
 
+  /* ---------------- 전역 Undo / Redo ---------------- */
+
+  useGlobalUndoRedo({
+    onUndo: () => {
+      const prev = undoRedo.undo(notes);
+      if (prev) {
+        setNotes(prev);
+        showToast({ message: "Undo 실행됨" });
+      }
+    },
+    onRedo: () => {
+      const next = undoRedo.redo(notes);
+      if (next) {
+        setNotes(next);
+        showToast({ message: "Redo 실행됨" });
+      }
+    },
+  });
+
   /* ---------------- 명령 처리 ---------------- */
 
   const handleCommand = (commandId) => {
+    /* 새 노트 */
     if (commandId === "note.new") {
-      capture(notes);
+      undoRedo.push(notes);
 
       const newNote = {
         id: Date.now().toString(),
@@ -55,10 +83,11 @@ function AppInner() {
       showToast({ message: "새 노트가 생성되었습니다" });
     }
 
+    /* 노트 삭제 */
     if (commandId === "note.delete") {
       if (!currentNoteId) return;
 
-      capture(notes);
+      undoRedo.push(notes);
 
       setNotes((prev) => prev.filter((n) => n.id !== currentNoteId));
       setCurrentNoteId(null);
@@ -67,18 +96,37 @@ function AppInner() {
         message: "노트가 삭제되었습니다",
         actionLabel: "Undo",
         onAction: () => {
-          const prev = undo();
-          if (prev) {
-            setNotes(prev);
-            setCurrentNoteId(currentNoteId);
-          }
+          const prev = undoRedo.undo(notes);
+          if (prev) setNotes(prev);
         },
       });
     }
 
-    if (commandId === "file.export") {
-      showToast({ message: "노트 내보내기 (미구현)" });
+    /* Undo / Redo 명령 */
+    if (commandId === "edit.undo") {
+      const prev = undoRedo.undo(notes);
+      if (prev) {
+        setNotes(prev);
+        showToast({ message: "Undo 실행됨" });
+      }
     }
+
+    if (commandId === "edit.redo") {
+      const next = undoRedo.redo(notes);
+      if (next) {
+        setNotes(next);
+        showToast({ message: "Redo 실행됨" });
+      }
+    }
+  };
+
+  /* ---------------- 노트 편집 ---------------- */
+  /* ⚠️ 잦은 입력은 push하지 않음 (blur / debounce 권장) */
+
+  const handleChangeContent = (content) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === currentNoteId ? { ...n, content } : n))
+    );
   };
 
   /* ---------------- 렌더 ---------------- */
@@ -93,14 +141,7 @@ function AppInner() {
       />
 
       {/* 에디터 */}
-      <Editor
-        note={currentNote}
-        onChange={(content) =>
-          setNotes((prev) =>
-            prev.map((n) => (n.id === currentNoteId ? { ...n, content } : n))
-          )
-        }
-      />
+      <Editor note={currentNote} onChange={handleChangeContent} />
 
       {/* Command Palette */}
       {open && (
@@ -115,7 +156,9 @@ function AppInner() {
   );
 }
 
-/* ---------------- App Root ---------------- */
+/* ============================================================
+   App Root
+============================================================ */
 
 export default function App() {
   return (

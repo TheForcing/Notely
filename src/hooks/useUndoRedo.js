@@ -1,46 +1,36 @@
 import { useRef } from "react";
 
-const MAX_STACK = 20;
-
-export default function useUndoRedo() {
+export default function useUndoRedo(limit = 50) {
   const undoStack = useRef([]);
   const redoStack = useRef([]);
 
-  const clone = (state) => JSON.parse(JSON.stringify(state));
-
   const push = (state) => {
-    undoStack.current.unshift(clone(state));
-    redoStack.current = []; // 🔥 새 작업 → redo 초기화
-
-    if (undoStack.current.length > MAX_STACK) {
-      undoStack.current.pop();
+    undoStack.current.push(structuredClone(state));
+    if (undoStack.current.length > limit) {
+      undoStack.current.shift();
     }
+    redoStack.current = [];
   };
 
-  const undo = (currentState) => {
-    if (!undoStack.current.length) return null;
-
-    const prev = undoStack.current.shift();
-    redoStack.current.unshift(clone(currentState));
+  const undo = (current) => {
+    if (undoStack.current.length === 0) return null;
+    const prev = undoStack.current.pop();
+    redoStack.current.push(structuredClone(current));
     return prev;
   };
 
-  const redo = (currentState) => {
-    if (!redoStack.current.length) return null;
-
-    const next = redoStack.current.shift();
-    undoStack.current.unshift(clone(currentState));
+  const redo = (current) => {
+    if (redoStack.current.length === 0) return null;
+    const next = redoStack.current.pop();
+    undoStack.current.push(structuredClone(current));
     return next;
   };
-
-  const canUndo = () => undoStack.current.length > 0;
-  const canRedo = () => redoStack.current.length > 0;
 
   return {
     push,
     undo,
     redo,
-    canUndo,
-    canRedo,
+    canUndo: () => undoStack.current.length > 0,
+    canRedo: () => redoStack.current.length > 0,
   };
 }

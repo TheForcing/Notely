@@ -1,29 +1,31 @@
 import { useRef } from "react";
 
-export default function useUndoRedo(limit = 50) {
+export default function useUndoRedo(limit = 100) {
   const undoStack = useRef([]);
   const redoStack = useRef([]);
 
-  const push = (state) => {
-    undoStack.current.push(structuredClone(state));
+  const push = (action) => {
+    undoStack.current.push(action);
     if (undoStack.current.length > limit) {
       undoStack.current.shift();
     }
     redoStack.current = [];
   };
 
-  const undo = (current) => {
-    if (undoStack.current.length === 0) return null;
-    const prev = undoStack.current.pop();
-    redoStack.current.push(structuredClone(current));
-    return prev;
+  const undo = (apply) => {
+    if (undoStack.current.length === 0) return;
+    const action = undoStack.current.pop();
+    redoStack.current.push(action);
+    apply(action.prevState);
+    return action;
   };
 
-  const redo = (current) => {
-    if (redoStack.current.length === 0) return null;
-    const next = redoStack.current.pop();
-    undoStack.current.push(structuredClone(current));
-    return next;
+  const redo = (apply) => {
+    if (redoStack.current.length === 0) return;
+    const action = redoStack.current.pop();
+    undoStack.current.push(action);
+    apply(action.nextState);
+    return action;
   };
 
   return {

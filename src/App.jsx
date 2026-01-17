@@ -1,169 +1,163 @@
-import { useEffect, useState } from "react";
-
+import { useMemo, useState } from "react";
 import NotesList from "./components/NotesList";
 import Editor from "./components/Editor";
+import UndoRedoBar from "./components/UndoRedoBar";
 import CommandPalette from "./components/CommandPalette";
+import Toast from "./components/Toast";
 
-import useCommandPalette from "./hooks/useCommandPalette";
 import useUndoRedo from "./hooks/useUndoRedo";
-import useGlobalUndoRedo from "./hooks/useGlobalUndoRedo";
+import useDebouncedCallback from "./hooks/useDebouncedCallback";
 
-import { ToastProvider, useToast } from "./context/ToastContext";
+import { contentChange, titleChange, tagChange } from "./utils/historyActions";
 
-/* ============================================================
-   내부 App (비즈니스 로직)
-============================================================ */
-
-function AppInner() {
-  const { open, closePalette } = useCommandPalette();
-  const { showToast } = useToast();
+export default function App() {
+  const [notes, setNotes] = useState([]);
+  const [currentNoteId, setCurrentNoteId] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const undoRedo = useUndoRedo();
 
-  const [notes, setNotes] = useState([]);
-  const [currentNoteId, setCurrentNoteId] = useState(null);
+  /* ----------------------------------
+     Toast
+  ---------------------------------- */
+  const showToast = ({ message }) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 2000);
+  };
 
-  /* ---------------- 초기 데이터 ---------------- */
+  /* ----------------------------------
+     Debounced undo push (content only)
+  ---------------------------------- */
+  const debouncedPushUndo = useDebouncedCallback((action) => {
+    undoRedo.push(action);
+  }, 600);
 
-  useEffect(() => {
-    const initialNotes = [
-      {
-        id: "1",
-        title: "Notely 구조",
-        content: "노트 앱 전체 구조 정리",
-      },
-      {
-        id: "2",
-        title: "Firebase API",
-        content: "Auth / Firestore / Storage 메모",
-      },
-    ];
+  /* ----------------------------------
+     Derived
+  ---------------------------------- */
+  const currentNote = useMemo(
+    () => notes.find((n) => n.id === currentNoteId),
+    [notes, currentNoteId]
+  );
 
-    setNotes(initialNotes);
-    setCurrentNoteId(initialNotes[0].id);
-  }, []);
+  /* ----------------------------------
+     Note selection
+  ---------------------------------- */
+  const handleSelectNote = (id) => {
+    // 타이핑 중이면 undo 강제 커밋
+    debouncedPushUndo.flush();
+    setCurrentNoteId(id);
+  };
 
-  const currentNote = notes.find((n) => n.id === currentNoteId);
+  /* ----------------------------------
+     Content change (debounced undo)
+  ---------------------------------- */
+  const handleChangeContent = (noteId, nextContent) => {
+    setNotes((prev) => {
+      const next = prev.map((n) =>
+        n.id === noteId ? { ...n, content: nextContent } : n
+      );
 
-  /* ---------------- 전역 Undo / Redo ---------------- */
+      debouncedPushUndo(contentChange(noteId, prev, next));
 
-  useGlobalUndoRedo({
-    onUndo: () => {
-      const prev = undoRedo.undo(notes);
-      if (prev) {
-        setNotes(prev);
-        showToast({ message: "Undo 실행됨" });
-      }
-    },
-    onRedo: () => {
-      const next = undoRedo.redo(notes);
-      if (next) {
-        setNotes(next);
-        showToast({ message: "Redo 실행됨" });
-      }
-    },
-  });
+      return next;
+    });
+  };
 
-  /* ---------------- 명령 처리 ---------------- */
+  /* ----------------------------------
+     Title change (immediate undo)
+  ---------------------------------- */
+  const handleChangeTitle = (noteId, nextTitle) => {
+    setNotes((prev) => {
+      const next = prev.map((n) =>
+        n.id === noteId ? { ...n, title: nextTitle } : n
+      );
 
-  const handleCommand = (commandId) => {
-    /* 새 노트 */
-    if (commandId === "note.new") {
-      undoRedo.push(notes);
+      undoRedo.push(titleChange(noteId, prev, next));
 
-      const newNote = {
-        id: Date.now().toString(),
-        title: "새 노트",
-        content: "",
-      };
+      return next;
+    });
+  };
 
-      setNotes((prev) => [newNote, ...prev]);
-      setCurrentNoteId(newNote.id);
+  /* ----------------------------------
+     Tag change (immediate undo)
+  ---------------------------------- */
+  const handleChangeTags = (noteId, nextTags) => {
+    setNotes((prev) => {
+      const next = prev.map((n) =>
+        n.id === noteId ? { ...n, tags: nextTags } : n
+      );
 
-      showToast({ message: "새 노트가 생성되었습니다" });
-    }
+      undoRedo.push(tagChange(noteId, prev, next));
 
-    /* 노트 삭제 */
-    if (commandId === "note.delete") {
-      if (!currentNoteId) return;
+      return next;
+    });
+  };
 
-      undoRedo.push(notes);
+  /* ----------------------------------
+     Apply state for undo / redo
+  ---------------------------------- */
+  const applyNotes = (next) => {
+    setNotes(next);
+  };
 
-      setNotes((prev) => prev.filter((n) => n.id !== currentNoteId));
-      setCurrentNoteId(null);
-
-      showToast({
-        message: "노트가 삭제되었습니다",
-        actionLabel: "Undo",
-        onAction: () => {
-          const prev = undoRedo.undo(notes);
-          if (prev) setNotes(prev);
-        },
-      });
-    }
-
-    /* Undo / Redo 명령 */
-    if (commandId === "edit.undo") {
-      const prev = undoRedo.undo(notes);
-      if (prev) {
-        setNotes(prev);
-        showToast({ message: "Undo 실행됨" });
-      }
-    }
-
-    if (commandId === "edit.redo") {
-      const next = undoRedo.redo(notes);
-      if (next) {
-        setNotes(next);
-        showToast({ message: "Redo 실행됨" });
-      }
+  const handleUndo = () => {
+    debouncedPushUndo.flush();
+    const action = undoRedo.undo(applyNotes);
+    if (action) {
+      showToast({ message: `Undo: ${action.label}` });
     }
   };
 
-  /* ---------------- 노트 편집 ---------------- */
-  /* ⚠️ 잦은 입력은 push하지 않음 (blur / debounce 권장) */
-
-  const handleChangeContent = (content) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === currentNoteId ? { ...n, content } : n))
-    );
+  const handleRedo = () => {
+    const action = undoRedo.redo(applyNotes);
+    if (action) {
+      showToast({ message: `Redo: ${action.label}` });
+    }
   };
 
-  /* ---------------- 렌더 ---------------- */
-
+  /* ----------------------------------
+     Render
+  ---------------------------------- */
   return (
     <div style={{ display: "flex", height: "100vh" }}>
-      {/* 사이드바 */}
       <NotesList
         notes={notes}
-        activeId={currentNoteId}
-        onSelect={setCurrentNoteId}
+        currentNoteId={currentNoteId}
+        onSelect={handleSelectNote}
       />
 
-      {/* 에디터 */}
-      <Editor note={currentNote} onChange={handleChangeContent} />
-
-      {/* Command Palette */}
-      {open && (
-        <CommandPalette
-          notes={notes}
-          onSelectNote={setCurrentNoteId}
-          onCommand={handleCommand}
-          onClose={closePalette}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <UndoRedoBar
+          canUndo={undoRedo.canUndo()}
+          canRedo={undoRedo.canRedo()}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
         />
-      )}
+
+        {currentNote ? (
+          <Editor
+            note={currentNote}
+            onChangeContent={handleChangeContent}
+            onChangeTitle={handleChangeTitle}
+            onChangeTags={handleChangeTags}
+            onBlur={() => debouncedPushUndo.flush()}
+          />
+        ) : (
+          <div style={{ padding: 24, color: "#888" }}>노트를 선택하세요</div>
+        )}
+      </div>
+
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+
+      {toast && <Toast message={toast} />}
     </div>
-  );
-}
-
-/* ============================================================
-   App Root
-============================================================ */
-
-export default function App() {
-  return (
-    <ToastProvider>
-      <AppInner />
-    </ToastProvider>
   );
 }

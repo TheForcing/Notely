@@ -1,14 +1,29 @@
 import { useRef } from "react";
+import { canMerge } from "../utils/historyMerge";
 
 export default function useUndoRedo(limit = 100) {
   const undoStack = useRef([]);
   const redoStack = useRef([]);
 
   const push = (action) => {
+    const last = undoStack.current.at(-1);
+
+    if (canMerge(last, action)) {
+      // 🔥 merge: prevState는 유지, nextState만 갱신
+      undoStack.current[undoStack.current.length - 1] = {
+        ...last,
+        nextState: action.nextState,
+        timestamp: action.timestamp,
+      };
+      return;
+    }
+
     undoStack.current.push(action);
+
     if (undoStack.current.length > limit) {
       undoStack.current.shift();
     }
+
     redoStack.current = [];
   };
 

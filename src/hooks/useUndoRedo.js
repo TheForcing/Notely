@@ -42,11 +42,23 @@ export default function useUndoRedo(limit = 100) {
     apply(action.nextState);
     return action;
   };
+  const jumpTo = (targetIndex, apply) => {
+    const total = undoStack.current.length;
+    if (targetIndex < 0 || targetIndex >= total) return;
 
+    const stepsToUndo = total - 1 - targetIndex;
+
+    for (let i = 0; i < stepsToUndo; i++) {
+      const action = undoStack.current.pop();
+      redoStack.current.push(action);
+      apply(action.prevState);
+    }
+  };
   return {
     push,
     undo,
     redo,
+    jumpTo,
     canUndo: () => undoStack.current.length > 0,
     canRedo: () => redoStack.current.length > 0,
   };

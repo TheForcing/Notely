@@ -38,7 +38,7 @@ export default function App() {
   ---------------------------------- */
   const currentNote = useMemo(
     () => notes.find((n) => n.id === currentNoteId),
-    [notes, currentNoteId]
+    [notes, currentNoteId],
   );
 
   /* ----------------------------------
@@ -56,7 +56,7 @@ export default function App() {
   const handleChangeContent = (noteId, nextContent) => {
     setNotes((prev) => {
       const next = prev.map((n) =>
-        n.id === noteId ? { ...n, content: nextContent } : n
+        n.id === noteId ? { ...n, content: nextContent } : n,
       );
 
       debouncedPushUndo(contentChange(noteId, prev, next));
@@ -71,7 +71,7 @@ export default function App() {
   const handleChangeTitle = (noteId, nextTitle) => {
     setNotes((prev) => {
       const next = prev.map((n) =>
-        n.id === noteId ? { ...n, title: nextTitle } : n
+        n.id === noteId ? { ...n, title: nextTitle } : n,
       );
 
       undoRedo.push(titleChange(noteId, prev, next));
@@ -86,7 +86,7 @@ export default function App() {
   const handleChangeTags = (noteId, nextTags) => {
     setNotes((prev) => {
       const next = prev.map((n) =>
-        n.id === noteId ? { ...n, tags: nextTags } : n
+        n.id === noteId ? { ...n, tags: nextTags } : n,
       );
 
       undoRedo.push(tagChange(noteId, prev, next));
@@ -115,6 +115,16 @@ export default function App() {
     if (action) {
       showToast({ message: `Redo: ${action.label}` });
     }
+  };
+  const handleJumpHistory = (index) => {
+    // 타이핑 중이면 먼저 커밋
+    debouncedPushUndo.flush();
+
+    undoRedo.jumpTo(index, applyNotes);
+
+    showToast({
+      message: `히스토리 이동`,
+    });
   };
 
   /* ----------------------------------
@@ -158,6 +168,10 @@ export default function App() {
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
 
       {toast && <Toast message={toast} />}
+      <HistoryPanel
+        history={undoRedo.getHistory()}
+        onSelect={(item, index) => handleJumpHistory(index)}
+      />
     </div>
   );
 }

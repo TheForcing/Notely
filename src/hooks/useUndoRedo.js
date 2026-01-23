@@ -54,6 +54,13 @@ export default function useUndoRedo(limit = 100) {
       apply(action.prevState);
     }
   };
+  const getHistory = () => {
+    return [...undoStack.current].reverse();
+  };
+  const getCursor = () => {
+    return undoStack.current.length - 1;
+  };
+
   return {
     push,
     undo,
@@ -61,5 +68,7 @@ export default function useUndoRedo(limit = 100) {
     jumpTo,
     canUndo: () => undoStack.current.length > 0,
     canRedo: () => redoStack.current.length > 0,
+    getHistory,
+    getCursor,
   };
 }

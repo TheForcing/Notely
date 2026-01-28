@@ -15,7 +15,8 @@ export default function App() {
   const [currentNoteId, setCurrentNoteId] = useState(null);
   const [toast, setToast] = useState(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
-
+  const [currentNoteId, setCurrentNoteId] = useState(null);
+  const [filterCurrentNoteOnly, setFilterCurrentNoteOnly] = useState(false);
   const undoRedo = useUndoRedo();
 
   /* ----------------------------------
@@ -126,6 +127,12 @@ export default function App() {
       message: `히스토리 이동`,
     });
   };
+  //filter
+  const filteredHistory = useMemo(() => {
+    if (!filterCurrentNoteOnly || !currentNoteId) return history;
+
+    return history.filter((item) => item.noteId === currentNoteId);
+  }, [history, filterCurrentNoteOnly, currentNoteId]);
 
   /* ----------------------------------
      Render

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import useSharedSearch from "../hooks/useSharedSearch";
 import useKeyboardNavigation from "../hooks/useKeyboardNavigation";
 import { buildSnippet, highlight } from "../utils/snippet";
@@ -9,17 +9,22 @@ export default function NotesList({
   activeId,
   onSelect,
   onCloseSearch,
+  fuzzy = true,
+  threshold = 0.4,
 }) {
-  const options = {
-    includeScore: true,
-    threshold: 0.4,
-    ignoreLocation: true,
-    keys: [
-      { name: "title", weight: 0.7 },
-      { name: "tags", weight: 0.2 },
-      { name: "body", weight: 0.1 },
-    ],
-  };
+  const options = useMemo(
+    () => ({
+      includeScore: true,
+      threshold: fuzzy ? threshold : 0,
+      ignoreLocation: true,
+      keys: [
+        { name: "title", weight: 0.7 },
+        { name: "tags", weight: 0.2 },
+        { name: "body", weight: 0.1 },
+      ],
+    }),
+    [fuzzy, threshold]
+  );
 
   const { search, results, ready } = useSharedSearch(notes, options);
   const list = query ? results : notes;
@@ -36,7 +41,7 @@ export default function NotesList({
   // 🔹 검색 실행
   useEffect(() => {
     if (query && ready) search(query);
-  }, [query, ready]);
+  }, [query, ready, search]);
 
   // 🔹 검색어 변경 시 포커스 초기화
   useEffect(() => {

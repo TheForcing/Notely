@@ -1,9 +1,10 @@
 // src/pages/Home.jsx
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import Editor from "../components/EditorWithIndexedDB";
 import useNotes from "../hooks/useNotes";
 import NotesList from "../components/NotesList";
 import SearchBar from "../components/SearchBar";
+import { matchesTagFilter } from "../utils/noteFilters";
 
 export default function Home() {
   const {
@@ -18,6 +19,12 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [fuzzy, setFuzzy] = useState(true);
   const [threshold, setThreshold] = useState(0.4);
+  const [tagFilter, setTagFilter] = useState("");
+
+  const filteredNotes = useMemo(
+    () => notes.filter((note) => matchesTagFilter(note, tagFilter)),
+    [notes, tagFilter]
+  );
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
@@ -48,10 +55,12 @@ export default function Home() {
             onToggleFuzzy={setFuzzy}
             threshold={threshold}
             onChangeThreshold={setThreshold}
+            tagFilter={tagFilter}
+            onChangeTagFilter={setTagFilter}
           />
         </div>
         <NotesList
-          notes={notes}
+          notes={filteredNotes}
           onSelect={setActiveNoteId}
           onDelete={deleteNote}
           activeId={activeNoteId}

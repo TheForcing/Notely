@@ -8,6 +8,9 @@ export default function SearchBar({
   onToggleFuzzy,
   threshold = 0.4,
   onChangeThreshold,
+  tagFilter = "",
+  onChangeTagFilter,
+  tagPlaceholder = "태그 필터 (예: work)",
   placeholder = "검색: 제목/본문/태그",
   clearOnEsc = true,
 }) {
@@ -52,6 +55,22 @@ export default function SearchBar({
           minWidth: 160,
         }}
       />
+
+      {onChangeTagFilter ? (
+        <input
+          value={tagFilter}
+          onChange={(e) => onChangeTagFilter(e.target.value)}
+          placeholder={tagPlaceholder}
+          style={{
+            flex: 1,
+            padding: "8px 12px",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            outline: "none",
+            minWidth: 160,
+          }}
+        />
+      ) : null}
 
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <label

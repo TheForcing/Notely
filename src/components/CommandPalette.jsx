@@ -3,6 +3,7 @@ import { COMMANDS } from "../commands/commands";
 import useRecentItems from "../hooks/useRecentItems";
 import NotesList from "./NotesList";
 import CommandPreview from "./CommandPreview";
+import { matchesTextFilter } from "../utils/noteFilters";
 
 export default function CommandPalette({
   notes,
@@ -23,9 +24,7 @@ export default function CommandPalette({
     c.label.toLowerCase().includes(keyword)
   );
 
-  const noteItems = notes.filter((n) =>
-    n.title.toLowerCase().includes(query.toLowerCase())
-  );
+  const noteItems = notes.filter((n) => matchesTextFilter(n, query));
 
   /* ---------------- 노트 목록 ---------------- */
 
@@ -125,7 +124,8 @@ export default function CommandPalette({
             </ul>
           ) : (
             <NotesList
-              notes={filteredNotes}
+              notes={noteItems}
+              query={query}
               activeIndex={activeIndex}
               onSelect={(id) => {
                 onSelectNote(id);

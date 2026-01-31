@@ -2,13 +2,20 @@
 import React, { useEffect, useState, useRef } from "react";
 import { marked } from "marked";
 import TagInput from "./TagInput";
+import CompressionControls from "./CompressionControls";
 import useAuth from "../hooks/useAuth";
-import useNotes from "../hooks/useNotes";
 import { startUploadUserFile } from "../firebase";
+import { compressImageFile } from "../utils/imageCompress";
 
-export default function Editor({ note, onChange, onDelete, onTogglePin }) {
+export default function Editor({
+  note,
+  onChange,
+  onDelete,
+  onTogglePin,
+  enqueueFile,
+  addAttachmentMeta,
+}) {
   const { user } = useAuth();
-  const { enqueueFile, addAttachmentMeta } = useNotes();
   const [draft, setDraft] = useState(
     note || { title: "", body: "", tags: [], attachments: [] }
   );

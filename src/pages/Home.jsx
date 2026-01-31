@@ -13,6 +13,8 @@ export default function Home() {
     createNote,
     updateNote,
     deleteNote,
+    enqueueFile,
+    addAttachmentMeta,
     activeNoteId,
     setActiveNoteId,
   } = useNotes();
@@ -76,6 +78,8 @@ export default function Home() {
           onChange={updateNote}
           onDelete={deleteNote}
           onTogglePin={() => {}}
+          enqueueFile={enqueueFile}
+          addAttachmentMeta={addAttachmentMeta}
         />
       </div>
     </div>

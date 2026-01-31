@@ -178,7 +178,9 @@ export default function useNotes() {
     const toWrite = { id, ...patch, updatedAt: Date.now() };
     if (user) {
       try {
-        await setDoc(doc(db, "users", user.uid, "notes", id), toWrite);
+        await setDoc(doc(db, "users", user.uid, "notes", id), toWrite, {
+          merge: true,
+        });
       } catch (e) {
         console.warn("update remote failed", e);
       }
